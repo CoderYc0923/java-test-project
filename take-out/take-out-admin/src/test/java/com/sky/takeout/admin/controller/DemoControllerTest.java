@@ -1,5 +1,6 @@
 package com.sky.takeout.admin.controller;
 
+import com.sky.takeout.common.result.ErrorCode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -21,7 +22,7 @@ class DemoControllerTest {
     void hello_returnsUnifiedResult() throws Exception {
         mockMvc.perform(get("/api/hello"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(1))
+                .andExpect(jsonPath("$.code").value(ErrorCode.SUCCESS))
                 .andExpect(jsonPath("$.data").value("Hello, World!"));
     }
 }
