@@ -46,7 +46,7 @@ class EmployeeControllerTest {
         employee.setUpdateUser(1L);
         when(employeeService.getById(1L)).thenReturn(employee);
 
-        mockMvc.perform(get("/api/employees/1"))
+        mockMvc.perform(get("/admin/employee/1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(ErrorCode.SUCCESS))
                 .andExpect(jsonPath("$.data.id").value(1))
@@ -59,7 +59,7 @@ class EmployeeControllerTest {
         when(employeeService.getById(99999L))
                 .thenThrow(new BusinessException(ErrorCode.ERROR, "员工不存在"));
 
-        mockMvc.perform(get("/api/employees/99999"))
+        mockMvc.perform(get("/admin/employee/99999"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(ErrorCode.ERROR))
                 .andExpect(jsonPath("$.msg").value("员工不存在"));

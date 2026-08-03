@@ -1,0 +1,22 @@
+{
+  "version": "1.0",
+  "timestamp": 1785769874441,
+  "projectRoot": "d:\\前端\\Projects\\java-test-project\\take-out",
+  "entries": [
+    {
+      "path": "take-out-framework\\target\\classes\\com\\sky\\takeout\\framework\\config\\WebMvcConfig.class",
+      "mtime": 1785765244093.4993,
+      "size": 498
+    },
+    {
+      "path": "take-out-admin\\target\\classes\\com\\sky\\takeout\\admin\\TakeOutAdminApplication.class",
+      "mtime": 1785768976247.1733,
+      "size": 812
+    },
+    {
+      "path": "take-out-framework\\target\\classes\\com\\sky\\takeout\\framework\\config\\MybatisPlusConfig.class",
+      "mtime": 1785769874273.6,
+      "size": 536
+    }
+  ]
+}
