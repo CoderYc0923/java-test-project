@@ -1,3 +1,15 @@
 spring:
   application:
     name: take-out-admin
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3307/take_out?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
+    username: takeout_rw
+    password: TakeoutRw@123
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto

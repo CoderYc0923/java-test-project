@@ -1,16 +1,11 @@
-﻿### Task 2: Employee 瀹炰綋涓?VO
+﻿# Task 2 review package (working tree, no commits)
 
-**Files:**
-- Create: `take-out-pojo/src/main/java/com/sky/takeout/pojo/entity/Employee.java`
-- Create: `take-out-pojo/src/main/java/com/sky/takeout/pojo/vo/EmployeeVO.java`
+## Stat
+?? take-out-pojo/src/main/java/com/sky/takeout/pojo/entity/Employee.java
+?? take-out-pojo/src/main/java/com/sky/takeout/pojo/vo/EmployeeVO.java
 
-**Interfaces:**
-- Consumes: Lombok銆乣@TableName`锛坢ybatis-plus-annotation锛?
-- Produces: `Employee`锛堝惈 password锛夈€乣EmployeeVO`锛堟棤 password锛夛紱瀛楁鍚嶄笌涓嬭〃涓€鑷?
+## Employee.java
 
-- [ ] **Step 1: 鍒涘缓 `Employee.java`**
-
-```java
 package com.sky.takeout.pojo.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
@@ -37,11 +32,9 @@ public class Employee {
     private Long createUser;
     private Long updateUser;
 }
-```
 
-- [ ] **Step 2: 鍒涘缓 `EmployeeVO.java`**
+## EmployeeVO.java
 
-```java
 package com.sky.takeout.pojo.vo;
 
 import lombok.Data;
@@ -62,24 +55,3 @@ public class EmployeeVO {
     private Long createUser;
     private Long updateUser;
 }
-```
-
-- [ ] **Step 3: 缂栬瘧 pojo 妯″潡**
-
-Run:
-
-```powershell
-.\mvnw.cmd -q -pl take-out-pojo compile
-```
-
-Expected: BUILD SUCCESS銆?
-
-- [ ] **Step 4: Commit锛堜粎褰撶敤鎴疯姹傦級**
-
-```bash
-git add take-out-pojo/src/main/java/com/sky/takeout/pojo/entity/Employee.java take-out-pojo/src/main/java/com/sky/takeout/pojo/vo/EmployeeVO.java
-git commit -m "feat: add Employee entity and EmployeeVO"
-```
-
----
-

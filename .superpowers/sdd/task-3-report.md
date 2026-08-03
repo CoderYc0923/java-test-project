@@ -1,76 +1,35 @@
-# Task 3 Report: pojo / system 包占位
+# Task 3 Report: Mapper、Service 与 MapperScan
 
-**Status:** ✅ Complete  
-**Date:** 2026-08-01  
-**Commits:** None (Step 3 skipped per instructions)
+## Status
 
----
+**完成** — Steps 1–5 已执行，Step 6（Commit）已跳过。
 
-## What Was Implemented
+## 创建的文件
 
-### Step 1: 写入 package-info 文件
+| 文件 | 说明 |
+|------|------|
+| `take-out-system/.../mapper/EmployeeMapper.java` | `BaseMapper<Employee>` + `@Mapper` |
+| `take-out-system/.../service/EmployeeService.java` | 接口 `Employee getById(Long id)` |
+| `take-out-system/.../service/impl/EmployeeServiceImpl.java` | 不存在时抛 `BusinessException(ErrorCode.ERROR, "员工不存在")` |
+| `take-out-framework/.../config/MybatisPlusConfig.java` | `@MapperScan("com.sky.takeout.system.mapper")` |
 
-| Path | Package |
-|------|---------|
-| `take-out-pojo/src/main/java/com/sky/takeout/pojo/entity/package-info.java` | `com.sky.takeout.pojo.entity` |
-| `take-out-pojo/src/main/java/com/sky/takeout/pojo/dto/package-info.java` | `com.sky.takeout.pojo.dto` |
-| `take-out-pojo/src/main/java/com/sky/takeout/pojo/vo/package-info.java` | `com.sky.takeout.pojo.vo` |
-| `take-out-system/src/main/java/com/sky/takeout/system/service/package-info.java` | `com.sky.takeout.system.service` |
-| `take-out-system/src/main/java/com/sky/takeout/system/mapper/package-info.java` | `com.sky.takeout.system.mapper` |
+## 编译
 
-每个文件仅含对应 `package` 声明，与 brief 一致。
-
-### Step 2: 编译 pojo 与 system
-
-- 命令：`mvn -pl take-out-pojo,take-out-system -am compile`
-- 结果：**BUILD SUCCESS**
-- `take-out-pojo`：编译 3 个源文件
-- `take-out-system`：编译 2 个源文件
-
-### Step 3: Commit
-
-- **Skipped** — 未授权提交
-
----
-
-## Commands Run + Output
-
-```
-Command: mvn -pl take-out-pojo,take-out-system -am compile
-Exit code: 0
-
-[INFO] take-out ........................................... SUCCESS
-[INFO] take-out-common .................................... SUCCESS
-[INFO] take-out-pojo ...................................... SUCCESS
-[INFO] take-out-system .................................... SUCCESS
-[INFO] BUILD SUCCESS
-[INFO] Total time:  0.910 s
+```powershell
+.\mvnw.cmd -q -pl take-out-framework -am compile
 ```
 
----
+**结果:** BUILD SUCCESS（exit code 0）
 
-## Files Changed
+## 依赖说明
 
-| Action | Path |
-|--------|------|
-| Created | `take-out-pojo/src/main/java/com/sky/takeout/pojo/entity/package-info.java` |
-| Created | `take-out-pojo/src/main/java/com/sky/takeout/pojo/dto/package-info.java` |
-| Created | `take-out-pojo/src/main/java/com/sky/takeout/pojo/vo/package-info.java` |
-| Created | `take-out-system/src/main/java/com/sky/takeout/system/service/package-info.java` |
-| Created | `take-out-system/src/main/java/com/sky/takeout/system/mapper/package-info.java` |
+- `@Service` 编译通过，**未**向 `take-out-system/pom.xml` 额外添加 `spring-context`；`mybatis-plus-spring-boot4-starter` 传递依赖已足够。
+- `BusinessException` / `ErrorCode` 经 `take-out-pojo → take-out-common` 传递可用。
 
----
+## Commits
 
-## Self-Review
+无（按指令跳过 Step 6）。
 
-1. **文件与 brief 一致**：5 个 `package-info.java` 路径及内容均符合规格。
-2. **模块依赖链正常**：`take-out-system` → `take-out-pojo` → `take-out-common` 编译通过。
-3. **Git 可跟踪**：空包目录通过 `package-info.java` 占位，可被版本控制跟踪。
-4. **未提交**：遵守指令，未执行 Step 3 git commit。
+## Concerns
 
----
-
-## Concerns / Notes for Later Tasks
-
-1. **后续实体/DTO/VO**：可在对应包下添加具体类，无需再改包结构。
-2. **system 层**：`service` / `mapper` 包已就绪，待 Task 后续实现 MyBatis 与业务逻辑。
+无阻塞项。后续业务模块新增 Mapper 时，需在 `MybatisPlusConfig` 的 `@MapperScan` 中追加包路径（brief 建议使用 `value` 数组）。

@@ -1,81 +1,63 @@
-# Task 1 Report: 父 POM 与五子模块脚手架
+# Task 1 Report: 父 POM 与子模块依赖
 
 **Status:** ✅ Complete  
-**Date:** 2026-08-01  
-**Commits:** None (Step 8 skipped per global constraint)
+**Date:** 2026-08-03  
+**Commits:** None (Step 5 skipped per constraints)
 
 ---
 
 ## What Was Implemented
 
-### Step 1: 重写根 `pom.xml` 为父工程
-- 将单模块 Spring Boot 项目转换为 `packaging=pom` 的多模块父工程
-- 继承 `spring-boot-starter-parent` 4.1.0
-- 声明 5 个子模块：`take-out-common`、`take-out-pojo`、`take-out-system`、`take-out-framework`、`take-out-admin`
-- 配置 `take-out.version` 属性及 `dependencyManagement` 管理内部模块版本
+### Step 1: 父 `pom.xml` — MyBatis-Plus BOM
 
-### Steps 2–6: 创建五子模块 POM
-| 模块 | 依赖链 | 额外依赖 |
-|------|--------|----------|
-| `take-out-common` | — | `spring-boot-starter-test` (test) |
-| `take-out-pojo` | → common | — |
-| `take-out-system` | → pojo | — |
-| `take-out-framework` | → system | `spring-boot-starter-webmvc` |
-| `take-out-admin` | → framework | `spring-boot-starter-webmvc-test` (test), `spring-boot-maven-plugin` |
+在 `<dependencyManagement><dependencies>` 内追加（位于 take-out 内部模块声明之前）：
 
-依赖方向符合设计：`admin → framework → system → pojo → common`
-
-### Step 7: Maven 校验
-- `mvn -q -N validate` — BUILD SUCCESS
-- `mvn -q validate` — BUILD SUCCESS（6 模块反应堆全部 SUCCESS）
-
-### Step 8: Commit
-- **Skipped** — 未授权提交
-
----
-
-## Commands Run + Output
-
-### `mvn -q -N validate`
-```
-Exit code: 0 (BUILD SUCCESS, no output due to -q)
+```xml
+<dependency>
+    <groupId>com.baomidou</groupId>
+    <artifactId>mybatis-plus-bom</artifactId>
+    <version>3.5.17</version>
+    <type>pom</type>
+    <scope>import</scope>
+</dependency>
 ```
 
-### `mvn -q validate`
-```
-Exit code: 0 (BUILD SUCCESS, no output due to -q)
-```
+### Step 2: `take-out-pojo/pom.xml` — Lombok + annotation
 
-### `mvn -N validate` (verbose, for verification evidence)
-```
-[INFO] Scanning for projects...
-[INFO] --------------------------< com.sky:take-out >--------------------------
-[INFO] Building take-out 0.0.1-SNAPSHOT
-[INFO] --------------------------------[ pom ]---------------------------------
-[INFO] BUILD SUCCESS
-[INFO] Total time:  0.209 s
-```
+在现有 `take-out-common` 依赖旁追加：
 
-### `mvn validate` (verbose, for verification evidence)
-```
-[INFO] Reactor Build Order:
-[INFO] take-out                                                           [pom]
-[INFO] take-out-common                                                    [jar]
-[INFO] take-out-pojo                                                      [jar]
-[INFO] take-out-system                                                    [jar]
-[INFO] take-out-framework                                                 [jar]
-[INFO] take-out-admin                                                     [jar]
-...
-[INFO] Reactor Summary for take-out 0.0.1-SNAPSHOT:
-[INFO] take-out ........................................... SUCCESS
-[INFO] take-out-common .................................... SUCCESS
-[INFO] take-out-pojo ...................................... SUCCESS
-[INFO] take-out-system .................................... SUCCESS
-[INFO] take-out-framework ................................. SUCCESS
-[INFO] take-out-admin ..................................... SUCCESS
-[INFO] BUILD SUCCESS
-[INFO] Total time:  0.280 s
-```
+- `org.projectlombok:lombok`（`<optional>true</optional>`）
+- `com.baomidou:mybatis-plus-annotation`（版本由 BOM 管理）
+
+### Step 3: `take-out-system/pom.xml` — Starter + MySQL 驱动
+
+在现有 `take-out-pojo` 依赖旁追加：
+
+- `com.baomidou:mybatis-plus-spring-boot4-starter`（版本由 BOM 管理）
+- `com.mysql:mysql-connector-j`（`<scope>runtime</scope>`，版本由 Spring Boot parent 管理）
+
+### Step 4: 验证依赖可解析
+
+命令：`.\mvnw.cmd -q dependency:resolve -pl take-out-system -am`
+
+**首次运行（exit 1）：** 因 `take-out-common` 尚未安装到本地仓库（`Could not find artifact com.sky:take-out-common:jar:0.0.1-SNAPSHOT`）。这是多模块项目首次解析时的预期现象，与本次 POM 变更无关。
+
+**补救：** 执行 `.\mvnw.cmd -q install -pl take-out-system -am -DskipTests` 将 reactor 链（common → pojo → system）安装到本地仓库。
+
+**再次运行 brief 命令（exit 0）：** 无 unresolved dependency 错误。
+
+**补充验证（dependency:tree）：**
+
+| 模块 | 依赖 | 解析版本 |
+|------|------|----------|
+| take-out-pojo | lombok | 1.18.46 (optional) |
+| take-out-pojo | mybatis-plus-annotation | 3.5.17 |
+| take-out-system | mybatis-plus-spring-boot4-starter | 3.5.17 |
+| take-out-system | mysql-connector-j | 9.7.0 (runtime) |
+
+### Step 5: Commit
+
+**Skipped** — 用户约束与 plan 均要求不提交。
 
 ---
 
@@ -84,38 +66,30 @@ Exit code: 0 (BUILD SUCCESS, no output due to -q)
 | Action | Path |
 |--------|------|
 | Modified | `take-out/pom.xml` |
-| Created | `take-out/take-out-common/pom.xml` |
-| Created | `take-out/take-out-pojo/pom.xml` |
-| Created | `take-out/take-out-system/pom.xml` |
-| Created | `take-out/take-out-framework/pom.xml` |
-| Created | `take-out/take-out-admin/pom.xml` |
+| Modified | `take-out/take-out-pojo/pom.xml` |
+| Modified | `take-out/take-out-system/pom.xml` |
 
-**Unchanged (as expected):**
-- Root `src/` 目录及原有源码（`TakeOutApplication.java`、`DemoController.java` 等）保留至后续任务迁移
-- `mvnw` / `mvnw.cmd` / `.mvn/` wrapper 文件未改动
+未触碰：`docker-*`、`docker/` 及其他 dirty 文件。
 
 ---
 
 ## Self-Review
 
-1. **XML 内容**：所有 POM 内容与 task brief 中 Step 1–6 的 XML 块逐字一致。
-2. **模块顺序**：Maven Reactor 构建顺序正确反映依赖链（common → pojo → system → framework → admin）。
-3. **父 POM 清理**：原单模块的 `dependencies`、`build/plugins`（lombok、spring-boot-maven-plugin 等）已从根 POM 移除，符合脚手架阶段预期；这些将在后续任务迁移到对应子模块。
-4. **dependencyManagement**：四个内部模块（common/pojo/system/framework）已纳入版本管理；admin 作为终端模块未列入（符合 brief）。
-5. **validate 通过**：子模块尚无 `src/` 源码，validate 阶段无需编译，全部 SUCCESS。
-6. **未提交**：遵守全局约束，未执行 Step 8 git commit。
+| 检查项 | 结果 |
+|--------|------|
+| 仅修改 brief 指定的 3 个 POM | ✅ |
+| MyBatis-Plus BOM 3.5.17 import | ✅ |
+| pojo: lombok optional + mybatis-plus-annotation | ✅ |
+| system: mybatis-plus-spring-boot4-starter + mysql-connector-j runtime | ✅ |
+| 子模块未写 Plus 版本号（由 BOM 统一管理） | ✅ |
+| 依赖方向 admin → framework → system → pojo → common 未变 | ✅ |
+| 未创建 Java 源文件 | ✅ |
+| dependency:resolve 最终 exit 0 | ✅ |
+
+**备注：** 全新 clone 环境下，首次 `dependency:resolve -am` 可能需先 `install -am` 安装内部模块；后续 resolve 可独立成功。
 
 ---
 
-## Concerns / Notes for Later Tasks
+## Concerns
 
-1. **根 `src/` 与旧构建配置共存**：当前根目录仍保留单模块时代的 `src/`、`target/` 及 lombok 相关源码；在后续迁移任务完成前，根 POM 不再直接编译这些源码，可能导致 IDE 或旧 workflow 出现短暂不一致。
-2. **`take-out-admin` 无 main class**：admin 模块已配置 `spring-boot-maven-plugin`，但尚无 `@SpringBootApplication` 入口类；需后续任务从根 `src/` 迁移。
-3. **Lombok 未纳入子模块**：原根 POM 的 lombok 依赖与 compiler annotation processor 配置已移除，迁移 common/pojo 等模块时需重新添加。
-4. **`dependencyManagement` 未包含 admin**：admin 作为可执行终端模块，当前 brief 未要求纳入；若其他模块需依赖 admin API，后续需补充。
-
----
-
-## Test Summary
-
-`mvn -q -N validate` 与 `mvn -q validate` 均 BUILD SUCCESS；反应堆 6 模块（1 父 + 5 子）全部校验通过。
+无阻塞性问题。唯一环境注意事项：多模块 reactor 首次解析需本地已 install 内部 SNAPSHOT 构件。

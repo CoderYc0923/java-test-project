@@ -1,36 +1,56 @@
-# Task 4 Report: framework — 全局异常与 WebMvc 占位
+# Task 4 Report: 数据源配置与 EmployeeController（含 WebMvc 测试）
 
 ## Status
 
-**完成** — 编译通过，未提交。
+**完成** — Steps 1–6 已执行；Step 7（手动 curl）跳过；Step 8（Commit）按指令跳过。
 
-## 新增文件
+## 变更文件
 
 | 文件 | 说明 |
 |------|------|
-| `take-out-framework/src/main/java/com/sky/takeout/framework/web/GlobalExceptionHandler.java` | `@RestControllerAdvice` 全局异常处理 |
-| `take-out-framework/src/main/java/com/sky/takeout/framework/config/WebMvcConfig.java` | `WebMvcConfigurer` 占位配置 |
+| `take-out-admin/.../controller/EmployeeController.java` | `GET /api/employees/{id}` → `Result<EmployeeVO>`（无 password） |
+| `take-out-admin/.../controller/EmployeeControllerTest.java` | `@WebMvcTest` + `@MockitoBean EmployeeService` + `@Import(GlobalExceptionHandler)` |
+| `take-out-admin/src/main/resources/application.yml` | MySQL 数据源（127.0.0.1:3307 / takeout_rw）+ MyBatis-Plus 配置 |
 
-## 实现要点
+## TDD Evidence
 
-### GlobalExceptionHandler
+### RED（Step 1–2）
 
-- `BusinessException` → `Result.error(ex.getCode(), ex.getMessage())`
-- 通用 `Exception` → `Result.error("系统异常，请稍后重试")`
-- 依赖 `take-out-common` 中的 `Result`、`BusinessException`（经 `take-out-system` 传递）
+先写 `EmployeeControllerTest`，再跑：
 
-### WebMvcConfig
-
-- `@Configuration` + 实现 `WebMvcConfigurer`，空方法体，供后续扩展拦截器/CORS 等
-
-## 验证
-
-```bash
-mvn -pl take-out-framework -am compile
+```powershell
+.\mvnw.cmd -pl take-out-admin -am test "-Dtest=EmployeeControllerTest" "-Dsurefire.failIfNoSpecifiedTests=false"
 ```
 
-**结果:** BUILD SUCCESS（编译 2 个源文件）
+**结果:** BUILD FAILURE — `testCompile` 报错：找不到符号 `EmployeeController`（符合预期：Controller 尚不存在）。
 
-## 未执行
+### GREEN（Step 3–5）
 
-- Git commit（按 brief 要求，仅用户授权时提交）
+实现 `EmployeeController` + 更新 `application.yml` 后重跑同一命令（先 `clean` 以避免陈旧 pojo 产物）：
+
+```powershell
+.\mvnw.cmd clean test -pl take-out-admin -am "-Dtest=EmployeeControllerTest" "-Dsurefire.failIfNoSpecifiedTests=false"
+```
+
+**结果:** Tests run: 2, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS。
+
+## Step 6: 全量测试
+
+- `docker compose ps`：`take-out-mysql` **healthy**（`0.0.0.0:3307->3306`）
+- `.\mvnw.cmd clean test -pl take-out-admin -am` → BUILD SUCCESS
+  - `take-out-common` ResultTest: 3
+  - `take-out-admin`: DemoControllerTest 1 + EmployeeControllerTest 2 + TakeOutAdminApplicationTests 1 = **4**（Failures/Errors: 0）
+
+## Step 7
+
+未执行 `spring-boot:run` / curl（按 brief：可选；WebMvcTest + 全量 mvn test 已覆盖）。
+
+## Commits
+
+无（跳过 Step 8）。
+
+## Concerns
+
+1. PowerShell 下 `-Dsurefire.failIfNoSpecifiedTests=false` 需加引号，否则会被拆成非法 lifecycle phase。
+2. 偶发 `无法访问 Employee / 找不到类文件`：对 reactor 做 `clean` 后恢复（陈旧/不完整 `take-out-pojo` 产物）。
+3. Mockito inline agent 警告（JDK 未来行为）；不影响本次测试通过。

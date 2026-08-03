@@ -1,227 +1,78 @@
-### Task 1: 父 POM 与五子模块脚手架
+﻿### Task 1: 鐖?POM 涓庡瓙妯″潡渚濊禆
 
 **Files:**
 - Modify: `pom.xml`
-- Create: `take-out-common/pom.xml`
-- Create: `take-out-pojo/pom.xml`
-- Create: `take-out-system/pom.xml`
-- Create: `take-out-framework/pom.xml`
-- Create: `take-out-admin/pom.xml`
+- Modify: `take-out-pojo/pom.xml`
+- Modify: `take-out-system/pom.xml`
 
 **Interfaces:**
-- Consumes: 无
-- Produces: 可解析的多模块 Maven 反应堆；内部坐标 `com.sky:take-out-*:0.0.1-SNAPSHOT`
+- Consumes: 鏃?
+- Produces: 鍙嶅簲鍫嗗彲瑙ｆ瀽 `mybatis-plus-spring-boot4-starter:3.5.17`銆乣mybatis-plus-annotation`銆丩ombok銆乣mysql-connector-j`
 
-- [ ] **Step 1: 重写根 `pom.xml` 为父工程**
+- [ ] **Step 1: 鍦ㄧ埗 `pom.xml` 鐨?`dependencyManagement` 澧炲姞 MyBatis-Plus**
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-
-    <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.0</version>
-        <relativePath/>
-    </parent>
-
-    <groupId>com.sky</groupId>
-    <artifactId>take-out</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
-    <packaging>pom</packaging>
-    <name>take-out</name>
-
-    <modules>
-        <module>take-out-common</module>
-        <module>take-out-pojo</module>
-        <module>take-out-system</module>
-        <module>take-out-framework</module>
-        <module>take-out-admin</module>
-    </modules>
-
-    <properties>
-        <java.version>17</java.version>
-        <take-out.version>0.0.1-SNAPSHOT</take-out.version>
-    </properties>
-
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>com.sky</groupId>
-                <artifactId>take-out-common</artifactId>
-                <version>${take-out.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.sky</groupId>
-                <artifactId>take-out-pojo</artifactId>
-                <version>${take-out.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.sky</groupId>
-                <artifactId>take-out-system</artifactId>
-                <version>${take-out.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.sky</groupId>
-                <artifactId>take-out-framework</artifactId>
-                <version>${take-out.version}</version>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
-</project>
-```
-
-- [ ] **Step 2: 创建 `take-out-common/pom.xml`**
+鍦ㄧ幇鏈?`<dependencyManagement><dependencies>` 鍐呰拷鍔狅細
 
 ```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-    <parent>
-        <groupId>com.sky</groupId>
-        <artifactId>take-out</artifactId>
-        <version>0.0.1-SNAPSHOT</version>
-    </parent>
-    <artifactId>take-out-common</artifactId>
-    <name>take-out-common</name>
-    <dependencies>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
-</project>
+<dependency>
+    <groupId>com.baomidou</groupId>
+    <artifactId>mybatis-plus-bom</artifactId>
+    <version>3.5.17</version>
+    <type>pom</type>
+    <scope>import</scope>
+</dependency>
 ```
 
-- [ ] **Step 3: 创建 `take-out-pojo/pom.xml`**
+璇存槑锛氱敤 BOM 缁熶竴 Plus 鐩稿叧鏋勪欢鐗堟湰锛涘瓙妯″潡寮曞叆 starter / annotation 鏃跺彲涓嶅啓 version銆?
+
+- [ ] **Step 2: 鏇存柊 `take-out-pojo/pom.xml` 渚濊禆**
+
+鍦ㄧ幇鏈?`take-out-common` 渚濊禆鏃佽拷鍔狅細
 
 ```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-    <parent>
-        <groupId>com.sky</groupId>
-        <artifactId>take-out</artifactId>
-        <version>0.0.1-SNAPSHOT</version>
-    </parent>
-    <artifactId>take-out-pojo</artifactId>
-    <name>take-out-pojo</name>
-    <dependencies>
-        <dependency>
-            <groupId>com.sky</groupId>
-            <artifactId>take-out-common</artifactId>
-        </dependency>
-    </dependencies>
-</project>
+<dependency>
+    <groupId>org.projectlombok</groupId>
+    <artifactId>lombok</artifactId>
+    <optional>true</optional>
+</dependency>
+<dependency>
+    <groupId>com.baomidou</groupId>
+    <artifactId>mybatis-plus-annotation</artifactId>
+</dependency>
 ```
 
-- [ ] **Step 4: 创建 `take-out-system/pom.xml`**
+- [ ] **Step 3: 鏇存柊 `take-out-system/pom.xml` 渚濊禆**
+
+鍦ㄧ幇鏈?`take-out-pojo` 渚濊禆鏃佽拷鍔狅細
 
 ```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-    <parent>
-        <groupId>com.sky</groupId>
-        <artifactId>take-out</artifactId>
-        <version>0.0.1-SNAPSHOT</version>
-    </parent>
-    <artifactId>take-out-system</artifactId>
-    <name>take-out-system</name>
-    <dependencies>
-        <dependency>
-            <groupId>com.sky</groupId>
-            <artifactId>take-out-pojo</artifactId>
-        </dependency>
-    </dependencies>
-</project>
+<dependency>
+    <groupId>com.baomidou</groupId>
+    <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
+</dependency>
+<dependency>
+    <groupId>com.mysql</groupId>
+    <artifactId>mysql-connector-j</artifactId>
+    <scope>runtime</scope>
+</dependency>
 ```
 
-- [ ] **Step 5: 创建 `take-out-framework/pom.xml`**
+- [ ] **Step 4: 楠岃瘉渚濊禆鍙В鏋?*
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-    <parent>
-        <groupId>com.sky</groupId>
-        <artifactId>take-out</artifactId>
-        <version>0.0.1-SNAPSHOT</version>
-    </parent>
-    <artifactId>take-out-framework</artifactId>
-    <name>take-out-framework</name>
-    <dependencies>
-        <dependency>
-            <groupId>com.sky</groupId>
-            <artifactId>take-out-system</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webmvc</artifactId>
-        </dependency>
-    </dependencies>
-</project>
+Run:
+
+```powershell
+.\mvnw.cmd -q dependency:resolve -pl take-out-system -am
 ```
 
-- [ ] **Step 6: 创建 `take-out-admin/pom.xml`**
+Expected: exit code `0`锛屾棤 unresolved dependency 閿欒銆?
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-    <parent>
-        <groupId>com.sky</groupId>
-        <artifactId>take-out</artifactId>
-        <version>0.0.1-SNAPSHOT</version>
-    </parent>
-    <artifactId>take-out-admin</artifactId>
-    <name>take-out-admin</name>
-    <dependencies>
-        <dependency>
-            <groupId>com.sky</groupId>
-            <artifactId>take-out-framework</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webmvc-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
-</project>
-```
-
-- [ ] **Step 7: 校验反应堆可解析**
-
-Run: `mvn -q -N validate` 然后 `mvn -q validate`  
-Expected: BUILD SUCCESS（子模块尚无源码也可 validate）
-
-- [ ] **Step 8: Commit（仅用户授权时）**
+- [ ] **Step 5: Commit锛堜粎褰撶敤鎴疯姹傦級**
 
 ```bash
-git add pom.xml take-out-common/pom.xml take-out-pojo/pom.xml take-out-system/pom.xml take-out-framework/pom.xml take-out-admin/pom.xml
-git commit -m "build: scaffold hybrid multi-module parent and child POMs"
+git add pom.xml take-out-pojo/pom.xml take-out-system/pom.xml
+git commit -m "build: add MyBatis-Plus and Lombok dependencies"
 ```
 
 ---
+
