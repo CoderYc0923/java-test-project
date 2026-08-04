@@ -27,7 +27,8 @@
         <dependency>
             <groupId>io.swagger.core.v3</groupId>
             <artifactId>swagger-annotations-jakarta</artifactId>
-            <version>2.2.28</version>
+            <!-- 必须与 springdoc 自带的 swagger-core-jakarta 版本对齐，否则会出现 Schema.$dynamicRef NoSuchMethodError -->
+            <version>2.2.52</version>
         </dependency>
     </dependencies>
 </project>
