@@ -15,7 +15,8 @@ import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.stereotype.Service;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @Service
 public class EmployeeServiceImpl implements EmployeeService {
@@ -23,6 +24,8 @@ public class EmployeeServiceImpl implements EmployeeService {
     private final EmployeeMapper employeeMapper;
 
     private final AuthenticationManager authenticationManager;
+
+    private static final Logger log = LoggerFactory.getLogger(EmployeeServiceImpl.class);
 
     public EmployeeServiceImpl(EmployeeMapper employeeMapper, AuthenticationManager authenticationManager) {
         this.employeeMapper = employeeMapper;
@@ -53,14 +56,19 @@ public class EmployeeServiceImpl implements EmployeeService {
         // 根据 principal 的 id 查询员工
         Employee employee = employeeMapper.selectById(principal.getId());
         if (employee == null) {
+            log.error("登录失败:用户不存在, empId={}", principal.getId());
             throw new BusinessException(ErrorCode.ERROR, "用户名或密码错误");
         }
+
+        log.info("登录成功, empId={}, username={}", employee.getId(), employee.getUsername());
 
         return employee;
 
        } catch (BadCredentialsException e) {
+        log.error("登录失败:用户名或密码错误, username={}", loginDTO.getUsername());
         throw new BusinessException(ErrorCode.ERROR, "用户名或密码错误");
        } catch (DisabledException e) {
+        log.error("登录失败:账号已禁用, username={}", loginDTO.getUsername());
         throw new BusinessException(ErrorCode.ERROR, "账号已禁用");
        }
     }
