@@ -8,26 +8,26 @@
       <ul>
         <li>
           <p class="tit">营业额</p>
-          <p class="num">¥ {{ overviewData.turnover }}</p>
+          <p class="num">¥ {{ (overviewData && overviewData.turnover) || 0 }}</p>
         </li>
         <li>
           <p class="tit">有效订单</p>
-          <p class="num">{{ overviewData.validOrderCount }}</p>
+          <p class="num">{{ (overviewData && overviewData.validOrderCount) || 0 }}</p>
         </li>
         <li>
           <p class="tit">订单完成率</p>
           <p class="num">
-            {{ (overviewData.orderCompletionRate * 100).toFixed(0) }}%
+            {{ (((overviewData && overviewData.orderCompletionRate) || 0) * 100).toFixed(0) }}%
           </p>
         </li>
         <li>
           <p class="tit">平均客单价</p>
-          <p class="num">¥ {{ overviewData.unitPrice }}</p>
+          <p class="num">¥ {{ (overviewData && overviewData.unitPrice) || 0 }}</p>
         </li>
 
         <li>
           <p class="tit">新增用户</p>
-          <p class="num">{{ overviewData.newUsers }}</p>
+          <p class="num">{{ (overviewData && overviewData.newUsers) || 0 }}</p>
         </li>
       </ul>
     </div>

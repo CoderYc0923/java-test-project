@@ -97,19 +97,16 @@ export default class extends Vue {
     ;(this.$refs.loginForm as ElForm).validate(async (valid: boolean) => {
       if (valid) {
         this.loading = true
-        await UserModule.Login(this.loginForm as any)
-          .then((res: any) => {
-            if (String(res.code) === '1') {
-              this.$router.push('/')
-            } else {
-              // this.$message.error(res.msg)
-              this.loading = false
-            }
-          })
-          .catch(() => {
-            // this.$message.error('用户名或密码错误！')
-            this.loading = false
-          })
+        try {
+          const res: any = await UserModule.Login(this.loginForm as any)
+          if (String(res.code) === '1') {
+            await this.$router.replace('/')
+          }
+        } catch (e) {
+          // 登录失败已在 store / 拦截器处理
+        } finally {
+          this.loading = false
+        }
       } else {
         return false
       }

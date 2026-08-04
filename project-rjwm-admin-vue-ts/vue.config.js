@@ -19,8 +19,8 @@ module.exports = {
   },
   // 开启代理
   devServer: {
-    host:'0.0.0.0',
-    public: '0.0.0.0:8081', // 本地的ip:端口号
+    host: 'localhost',
+    public: 'localhost:8081', // 本地的ip:端口号
     port: 8081,
     open: true,
     disableHostCheck:true,

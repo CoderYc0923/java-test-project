@@ -10,14 +10,13 @@ NProgress.configure({ 'showSpinner': false })
 
 router.beforeEach(async (to: Route, _: Route, next: any) => {
   NProgress.start()
-  if (Cookies.get('token')) {
+  // cookie 与内存 token 任一存在即视为已登录（避免仅内存有 token 时被踢回登录）
+  if (Cookies.get('token') || UserModule.token) {
     next()
+  } else if (!to.meta.notNeedAuth) {
+    next('/login')
   } else {
-    if (!to.meta.notNeedAuth) {
-      next('/login')
-    } else {
-      next()
-    }
+    next()
   }
 })
 

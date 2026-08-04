@@ -84,7 +84,8 @@ class User extends VuexModule implements IUserState {
       this.SET_TOKEN(data.data.token)
       setToken(data.data.token)
       this.SET_USERINFO(data.data)
-      Cookies.set('user_info', data.data)
+      // js-cookie 对对象会变成 "[object Object]"，必须先序列化
+      Cookies.set('user_info', JSON.stringify(data.data))
       return data
     } else {
       return Message.error(data.msg)

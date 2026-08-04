@@ -6,6 +6,10 @@ import com.sky.takeout.pojo.vo.EmployeeVO;
 import com.sky.takeout.pojo.vo.EmployeeLoginVO;
 import com.sky.takeout.pojo.dto.EmployeeLoginDTO;
 import com.sky.takeout.system.service.EmployeeService;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+
 import com.sky.takeout.common.jwt.JwtUtil;
 import com.sky.takeout.common.constant.JwtClaimsConstant;
 import java.util.Map;
@@ -20,7 +24,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 
 
-
+@Tag(name = "员工管理")
 @RestController
 @RequestMapping("/admin/employee")
 public class EmployeeController {
@@ -37,6 +41,7 @@ public class EmployeeController {
     @Value("${jwt.admin-ttl}")
     private long ttl;
 
+    @Operation(summary = "员工登录")
     @PostMapping("/login")
     public Result<EmployeeLoginVO> login(@RequestBody EmployeeLoginDTO loginDTO) {
         // 1. 登录
@@ -58,6 +63,7 @@ public class EmployeeController {
         return Result.success(vo);
     }
 
+    @Operation(summary = "根据id查询员工")
     @GetMapping("/{id}")
     public Result<EmployeeVO> getById(@PathVariable Long id) {
         Employee employee = employeeService.getById(id);

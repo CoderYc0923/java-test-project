@@ -81,36 +81,50 @@ export default class extends Vue {
   }
   // 获取营业数据
   async getBusinessData() {
-    const data = await getBusinessData()
-    this.overviewData = data.data.data
+    try {
+      const data = await getBusinessData()
+      this.overviewData = (data.data && data.data.data) || {}
+    } catch (e) {
+      this.overviewData = {}
+    }
   }
   // 获取今日订单
   async getOrderStatisticsData() {
-    const data = await getOrderData()
-    this.orderviewData = data.data.data
+    try {
+      const data = await getOrderData()
+      this.orderviewData = (data.data && data.data.data) || {}
+    } catch (e) {
+      this.orderviewData = {}
+    }
   }
   // 获取菜品总览数据
   async getOverStatisticsData() {
-    const data = await getOverviewDishes()
-    this.dishesData = data.data.data
+    try {
+      const data = await getOverviewDishes()
+      this.dishesData = (data.data && data.data.data) || {}
+    } catch (e) {
+      this.dishesData = {}
+    }
   }
   // 获取套餐总览数据
   async getSetMealStatisticsData() {
-    const data = await getSetMealStatistics()
-    this.setMealData = data.data.data
+    try {
+      const data = await getSetMealStatistics()
+      this.setMealData = (data.data && data.data.data) || {}
+    } catch (e) {
+      this.setMealData = {}
+    }
   }
   //获取待处理，待派送，派送中数量
   getOrderListBy3Status() {
     getOrderListBy({})
       .then((res) => {
         if (res.data.code === 1) {
-          this.orderStatics = res.data.data
-        } else {
-          this.$message.error(res.data.msg)
+          this.orderStatics = res.data.data || {}
         }
       })
-      .catch((err) => {
-        this.$message.error('请求出错了：' + err.message)
+      .catch(() => {
+        this.orderStatics = {}
       })
   }
 }

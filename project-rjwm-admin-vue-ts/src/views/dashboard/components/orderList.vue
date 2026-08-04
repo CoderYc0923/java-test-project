@@ -551,21 +551,25 @@ export default class extends Vue {
       pageSize: this.pageSize,
       status: status,
     }
-    const data = await getOrderDetailPage(params)
-    this.orderData = data.data.data.records
-    this.counts = data.data.data.total
-    this.$emit('getOrderListBy3Status')
-    if (
-      this.dialogOrderStatus === 2 &&
-      this.status === 2 &&
-      this.isAutoNext &&
-      !this.isTableOperateBtn &&
-      data.data.records.length > 1
-    ) {
-      const row = data.data.records[0]
-      this.goDetail(row.id, row.status, row, row)
-    } else {
-      return null
+    try {
+      const data = await getOrderDetailPage(params)
+      const pageData = (data.data && data.data.data) || {}
+      this.orderData = pageData.records || []
+      this.counts = pageData.total || 0
+      this.$emit('getOrderListBy3Status')
+      if (
+        this.dialogOrderStatus === 2 &&
+        this.status === 2 &&
+        this.isAutoNext &&
+        !this.isTableOperateBtn &&
+        this.orderData.length > 1
+      ) {
+        const row = this.orderData[0]
+        this.goDetail(row.id, row.status, row, row)
+      }
+    } catch (e) {
+      this.orderData = []
+      this.counts = 0
     }
   }
 

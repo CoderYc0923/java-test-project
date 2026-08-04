@@ -22,6 +22,13 @@ import com.sky.takeout.framework.security.JwtAuthenticationFilter;
 @Configuration
 public class SecurityConfig {
 
+    private static final String[] WHITE_LIST = {
+            "/admin/employee/login",
+            "/v3/api-docs/**",
+            "/swagger-ui/**",
+            "/swagger-ui.html"
+    };
+
     /**
      * 配置 PasswordEncoder，用 BCryptPasswordEncoder 加密密码
      * 
@@ -67,9 +74,9 @@ public class SecurityConfig {
     /**
      * 配置 SecurityFilterChain
      * 
-     * @param http HttpSecurity 对象
-     * @param filter JWT 认证过滤器
-     * @param entryPoint 认证失败时，返回自定义的响应
+     * @param http                HttpSecurity 对象
+     * @param filter              JWT 认证过滤器
+     * @param entryPoint          认证失败时，返回自定义的响应
      * @param accessDeniedHandler 权限不足时，返回自定义的响应
      * @return SecurityFilterChain 安全过滤链
      * @throws Exception 异常
@@ -84,10 +91,12 @@ public class SecurityConfig {
         http.csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // 禁用 Session 管理
                 .authorizeHttpRequests(
-                        auth -> auth.requestMatchers("/admin/employee/login").permitAll().anyRequest().authenticated()) // 登录接口放行，其他接口需要认证
+                        auth -> auth.requestMatchers(WHITE_LIST).permitAll().anyRequest().authenticated()) // 登录接口放行，其他接口需要认证
                 .exceptionHandling(
                         ex -> ex.authenticationEntryPoint(entryPoint).accessDeniedHandler(accessDeniedHandler)) // 认证失败和权限不足时，返回自定义的响应
-                .addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class); // 将 JWT 认证过滤器添加到 UsernamePasswordAuthenticationFilter 之前
+                .addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class); // 将 JWT 认证过滤器添加到
+                                                                                      // UsernamePasswordAuthenticationFilter
+                                                                                      // 之前
 
         return http.build();
     }

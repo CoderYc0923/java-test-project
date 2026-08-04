@@ -147,9 +147,16 @@ export default class extends Vue {
   }
 
   get name() {
-    return (UserModule.userInfo as any).name
-      ? (UserModule.userInfo as any).name
-      : JSON.parse(Cookies.get('user_info') as any).name
+    const info = UserModule.userInfo as any
+    if (info && info.name) {
+      return info.name
+    }
+    try {
+      const raw = Cookies.get('user_info')
+      return raw ? JSON.parse(raw).name : ''
+    } catch (e) {
+      return ''
+    }
   }
 
   get getStoreId() {
@@ -278,9 +285,14 @@ export default class extends Vue {
   }
   // 营业状态
   async getStatus() {
-    const { data } = await getStatus()
-    this.status = data.data
-    this.setStatus = this.status
+    try {
+      const { data } = await getStatus()
+      this.status = data.data == null ? 0 : data.data
+      this.setStatus = this.status
+    } catch (e) {
+      this.status = 0
+      this.setStatus = 0
+    }
   }
   // 下拉菜单显示
   toggleShow() {
