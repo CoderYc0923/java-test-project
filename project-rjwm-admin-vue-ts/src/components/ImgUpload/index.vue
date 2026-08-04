@@ -46,7 +46,7 @@ export default class extends Vue {
   @Prop({ default: '' }) propImageUrl: string
 
   private headers = {
-    token: getToken()
+    Authorization: getToken()
   }
   private imageUrl = ''
   handleRemove() {}

@@ -22,7 +22,8 @@ service.interceptors.request.use(
     // config.data = config.params
     // Add X-Access-Token header to every request, you can add other custom headers here
     if (UserModule.token) {
-      config.headers['token'] = UserModule.token
+      // 与后端 jwt.admin-token-name=Authorization 对齐
+      config.headers['Authorization'] = UserModule.token
     } else if (UserModule.token && config.url != '/login') {
       window.location.href = '/login'
       return false

@@ -3790,11 +3790,6 @@ detect-indent@^4.0.0:
   dependencies:
     repeating "^2.0.0"
 
-detect-libc@^1.0.3:
-  version "1.0.3"
-  resolved "https://registry.npmmirror.com/detect-libc/download/detect-libc-1.0.3.tgz"
-  integrity sha1-+hN8S9aY7fVc1c0CrFWfkaTEups=
-
 detect-newline@^2.1.0:
   version "2.1.0"
   resolved "https://registry.npmmirror.com/detect-newline/download/detect-newline-2.1.0.tgz"
@@ -4806,13 +4801,6 @@ fd-slicer@~1.1.0:
   integrity sha1-JcfInLH5B3+IkbvmHY85Dq4lbx4=
   dependencies:
     pend "~1.2.0"
-
-fibers@^4.0.2:
-  version "4.0.3"
-  resolved "https://registry.npmmirror.com/fibers/-/fibers-4.0.3.tgz#dda5918280a48507f5d8a96dd9a525e8f4a532e2"
-  integrity sha512-MW5VrDtTOLpKK7lzw4qD7Z9tXaAhdOmOED5RHzg3+HjUk+ibkjVW0Py2ERtdqgTXaerLkVkBy2AEmJiT6RMyzg==
-  dependencies:
-    detect-libc "^1.0.3"
 
 figgy-pudding@^3.5.1:
   version "3.5.1"

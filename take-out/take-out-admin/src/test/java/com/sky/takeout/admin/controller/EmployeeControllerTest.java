@@ -7,6 +7,7 @@ import com.sky.takeout.pojo.entity.Employee;
 import com.sky.takeout.system.service.EmployeeService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -19,8 +20,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(controllers = EmployeeController.class)
-@Import(GlobalExceptionHandler.class)
+@WebMvcTest(controllers = EmployeeController.class) // 只测试 EmployeeController 类
+@AutoConfigureMockMvc(addFilters = false) // 禁用 MockMvc 的过滤器
+@Import(GlobalExceptionHandler.class) // 导入 GlobalExceptionHandler 类
 class EmployeeControllerTest {
 
     @Autowired

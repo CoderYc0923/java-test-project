@@ -1,3 +1,7 @@
+-- 确保初始化导入时客户端按 UTF-8 解读本文件（避免中文双重编码乱码）
+SET NAMES utf8mb4;
+SET CHARACTER SET utf8mb4;
+
 CREATE DATABASE  IF NOT EXISTS `take_out` ;
 USE `take_out`;
 
@@ -140,7 +144,7 @@ CREATE TABLE `employee` (
   UNIQUE KEY `idx_username` (`username`)
 ) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8mb3 COLLATE=utf8_bin COMMENT='员工信息';
 
-INSERT INTO `employee` VALUES (1,'管理员','admin','123456','13812312312','1','110101199001010047',1,'2022-02-15 15:51:20','2022-02-17 09:16:20',10,1);
+INSERT INTO `employee` VALUES (1,'管理员','admin','$2a$10$VrypyrCpcYbl7elqmzbw9ukAMQktiAdWTm7/qv0fQHVCAY45ncS46','13812312312','1','110101199001010047',1,'2022-02-15 15:51:20','2022-02-17 09:16:20',10,1);
 
 DROP TABLE IF EXISTS `order_detail`;
 CREATE TABLE `order_detail` (

@@ -158,7 +158,7 @@ export default class extends Vue {
   private index = 0
   private inputStyle = { flex: 1 }
   private headers = {
-    token: getToken()
+    Authorization: getToken()
   }
   private ruleForm = {
     name: '',

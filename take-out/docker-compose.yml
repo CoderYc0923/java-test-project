@@ -15,6 +15,7 @@ services:
     volumes:
       - take-out-mysql-data:/var/lib/mysql
       # 仅数据卷为空时执行一次（新机器首次 up / down -v 后）
+      - ./docker/mysql/init/00-charset.sql:/docker-entrypoint-initdb.d/00-charset.sql:ro
       - ./docker/mysql/init/01-users.sql:/docker-entrypoint-initdb.d/01-users.sql:ro
       - ./sky.sql:/docker-entrypoint-initdb.d/02-sky.sql:ro
     healthcheck:
