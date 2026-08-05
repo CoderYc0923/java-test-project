@@ -18,7 +18,7 @@ docker compose stop
 # 删容器但保留数据
 docker compose down
 
-# 连数据卷一起删（库清空，下次 up 会重新执行 init + 导入 sky.sql）
+# 连数据卷一起删（库清空，下次 up 会重新执行 init + 导入 sky.sql）换机器同步sql时需要操作
 docker compose down -v
 ```
 
@@ -35,7 +35,12 @@ docker compose down -v
 PowerShell / bash 通用（避免重定向乱码）：
 
 ```bash
+# docker exec：在正在跑的 MySQL 容器里执行命令
+# mysqldump：把库 take_out 整库导出成 SQL 文本（表结构 + 数据，含新员工）
+# -r /tmp/sky.sql：写到容器内部的 /tmp/sky.sql
 docker exec take-out-mysql mysqldump -uroot -proot --databases take_out --default-character-set=utf8mb4 -r /tmp/sky.sql
+# docker cp：在容器和本机之间拷文件
+# 把容器里的 /tmp/sky.sql 拷到当前目录的 ./sky.sql
 docker cp take-out-mysql:/tmp/sky.sql ./sky.sql
 ```
 
