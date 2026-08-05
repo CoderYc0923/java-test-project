@@ -4,6 +4,7 @@ import com.sky.takeout.common.exception.BusinessException;
 import com.sky.takeout.common.result.ErrorCode;
 import com.sky.takeout.framework.web.GlobalExceptionHandler;
 import com.sky.takeout.pojo.entity.Employee;
+import com.sky.takeout.pojo.enums.Sex;
 import com.sky.takeout.system.service.EmployeeService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,7 +40,7 @@ class EmployeeControllerTest {
         employee.setUsername("admin");
         employee.setPassword("123456");
         employee.setPhone("13812312312");
-        employee.setSex("1");
+        employee.setSex(Sex.MALE);
         employee.setIdNumber("110101199001010047");
         employee.setStatus(1);
         employee.setCreateTime(LocalDateTime.of(2022, 2, 15, 15, 51, 20));

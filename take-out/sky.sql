@@ -134,7 +134,7 @@ CREATE TABLE `employee` (
   `password` varchar(64) COLLATE utf8_bin NOT NULL COMMENT '密码',
   `phone` varchar(11) COLLATE utf8_bin NOT NULL COMMENT '手机号',
   `sex` varchar(2) COLLATE utf8_bin NOT NULL COMMENT '性别',
-  `id_number` varchar(18) COLLATE utf8_bin NOT NULL COMMENT '身份证号',
+  `id_number` varchar(18) COLLATE utf8_bin NULL COMMENT '身份证号',
   `status` int NOT NULL DEFAULT '1' COMMENT '状态 0:禁用，1:启用',
   `create_time` datetime DEFAULT NULL COMMENT '创建时间',
   `update_time` datetime DEFAULT NULL COMMENT '更新时间',

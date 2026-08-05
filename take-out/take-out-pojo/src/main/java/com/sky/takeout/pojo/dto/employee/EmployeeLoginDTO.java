@@ -1,4 +1,4 @@
-package com.sky.takeout.pojo.dto;
+package com.sky.takeout.pojo.dto.employee;
 
 import lombok.Data;
 import io.swagger.v3.oas.annotations.media.Schema;

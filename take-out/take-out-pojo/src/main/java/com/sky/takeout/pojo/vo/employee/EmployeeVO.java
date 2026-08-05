@@ -1,7 +1,7 @@
-package com.sky.takeout.pojo.vo;
+package com.sky.takeout.pojo.vo.employee;
 
 import lombok.Data;
-
+import com.sky.takeout.pojo.enums.Sex;
 import java.time.LocalDateTime;
 
 @Data
@@ -10,7 +10,7 @@ public class EmployeeVO {
     private String name;
     private String username;
     private String phone;
-    private String sex;
+    private Sex sex;
     private String idNumber;
     private Integer status;
     private LocalDateTime createTime;

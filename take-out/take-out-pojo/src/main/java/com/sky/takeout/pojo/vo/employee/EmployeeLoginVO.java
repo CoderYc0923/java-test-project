@@ -1,4 +1,4 @@
-package com.sky.takeout.pojo.vo;
+package com.sky.takeout.pojo.vo.employee;
 
 import lombok.Data;
 import lombok.Builder;

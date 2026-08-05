@@ -1,17 +1,20 @@
 package com.sky.takeout.framework.security;
 
 import java.io.IOException;
+import java.nio.file.PathMatcher;
 
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.AuthenticationEntryPoint;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import com.sky.takeout.common.constant.JwtClaimsConstant;
 import com.sky.takeout.common.context.BaseContext;
 import com.sky.takeout.common.jwt.JwtUtil;
 import com.sky.takeout.system.security.EmployeeUserDetails;
+import com.sky.takeout.framework.security.SecurityConstant;
 
 import io.jsonwebtoken.JwtException;
 
@@ -35,6 +38,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         this.authenticationEntryPoint = authenticationEntryPoint;
         this.secretKey = secretKey;
         this.tokenHeaderName = tokenHeaderName;
+    }
+
+    private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        for (String path : SecurityConstant.WHITE_LIST) {
+            if (PATH_MATCHER.match(path, uri)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 

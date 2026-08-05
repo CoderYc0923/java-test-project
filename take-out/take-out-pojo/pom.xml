@@ -30,5 +30,13 @@
             <!-- 必须与 springdoc 自带的 swagger-core-jakarta 版本对齐，否则会出现 Schema.$dynamicRef NoSuchMethodError -->
             <version>2.2.52</version>
         </dependency>
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+        </dependency>
     </dependencies>
 </project>

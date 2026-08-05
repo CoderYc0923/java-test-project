@@ -2,15 +2,21 @@ package com.sky.takeout.admin.controller;
 
 import com.sky.takeout.common.result.Result;
 import com.sky.takeout.pojo.entity.Employee;
-import com.sky.takeout.pojo.vo.EmployeeVO;
-import com.sky.takeout.pojo.vo.EmployeeLoginVO;
-import com.sky.takeout.pojo.dto.EmployeeLoginDTO;
+import com.sky.takeout.pojo.vo.employee.EmployeeVO;
+import com.sky.takeout.pojo.vo.employee.EmployeeLoginVO;
+import com.sky.takeout.pojo.dto.employee.EmployeeLoginDTO;
+import com.sky.takeout.pojo.dto.employee.EmployeeSaveDTO;
+import com.sky.takeout.pojo.dto.employee.EmployeeUpdateDTO;
+import com.sky.takeout.pojo.dto.employee.EmployeePageQueryDTO;
+import com.sky.takeout.pojo.dto.employee.EmployeeEnableOrDisableDTO;
 import com.sky.takeout.system.service.EmployeeService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 
 import com.sky.takeout.common.jwt.JwtUtil;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.sky.takeout.common.constant.JwtClaimsConstant;
 import java.util.Map;
 import java.util.HashMap;
@@ -18,10 +24,12 @@ import java.util.HashMap;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.PutMapping;
 
 
 @Tag(name = "员工管理")
@@ -61,6 +69,35 @@ public class EmployeeController {
             .build();
 
         return Result.success(vo);
+    }
+
+    @Operation(summary = "分页查询员工")
+    @GetMapping("/page")
+    public Result<IPage<EmployeeVO>> page(EmployeePageQueryDTO pageQueryDTO) {
+        IPage<Employee> page = employeeService.page(pageQueryDTO);
+        IPage<EmployeeVO> voPage = page.convert(EmployeeController::toVO);
+        return Result.success(voPage);
+    }
+
+    @Operation(summary = "新增员工")
+    @PostMapping
+    public Result<Void> save( @Valid @RequestBody EmployeeSaveDTO saveDTO) {
+        employeeService.save(saveDTO);
+        return Result.success();
+    }
+
+    @Operation(summary = "编辑员工")
+    @PutMapping
+    public Result<Void> update(@Valid @RequestBody EmployeeUpdateDTO updateDTO) {
+        employeeService.update(updateDTO);
+        return Result.success();
+    }
+
+    @Operation(summary = "启用禁用员工")
+    @PostMapping("/{id}/status")
+    public Result<Void> enableOrDisable(@PathVariable Long id, @RequestBody EmployeeEnableOrDisableDTO enableOrDisableDTO) {
+        employeeService.enableOrDisable(id, enableOrDisableDTO);
+        return Result.success();
     }
 
     @Operation(summary = "根据id查询员工")

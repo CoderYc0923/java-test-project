@@ -15,19 +15,13 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import com.sky.takeout.framework.security.JwtAccessDeniedHandler;
 import com.sky.takeout.framework.security.JwtAuthenticationEntryPoint;
 import com.sky.takeout.framework.security.JwtAuthenticationFilter;
+import com.sky.takeout.framework.security.SecurityConstant;
 
 /**
  * 配置 Spring Security，用 BCryptPasswordEncoder 加密密码
  */
 @Configuration
 public class SecurityConfig {
-
-    private static final String[] WHITE_LIST = {
-            "/admin/employee/login",
-            "/v3/api-docs/**",
-            "/swagger-ui/**",
-            "/swagger-ui.html"
-    };
 
     /**
      * 配置 PasswordEncoder，用 BCryptPasswordEncoder 加密密码
@@ -91,7 +85,7 @@ public class SecurityConfig {
         http.csrf(csrf -> csrf.disable())
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // 禁用 Session 管理
                 .authorizeHttpRequests(
-                        auth -> auth.requestMatchers(WHITE_LIST).permitAll().anyRequest().authenticated()) // 登录接口放行，其他接口需要认证
+                        auth -> auth.requestMatchers(SecurityConstant.WHITE_LIST).permitAll().anyRequest().authenticated()) // 登录接口放行，其他接口需要认证
                 .exceptionHandling(
                         ex -> ex.authenticationEntryPoint(entryPoint).accessDeniedHandler(accessDeniedHandler)) // 认证失败和权限不足时，返回自定义的响应
                 .addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class); // 将 JWT 认证过滤器添加到
