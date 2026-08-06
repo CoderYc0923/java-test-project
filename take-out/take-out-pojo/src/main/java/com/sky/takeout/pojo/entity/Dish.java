@@ -1,12 +1,14 @@
 package com.sky.takeout.pojo.entity;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.FieldFill;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.FieldFill;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
+import com.sky.takeout.pojo.enums.SaleStatus;
 
 import lombok.Data;
 
@@ -18,14 +20,14 @@ public class Dish {
     private Long id;
     private String name;
     private Long categoryId;
-    private Double price;
+    private BigDecimal price;
     private String image;
     private String description;
-    private Integer status;
+    private SaleStatus status;
 
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
-    
+
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updateTime;
 

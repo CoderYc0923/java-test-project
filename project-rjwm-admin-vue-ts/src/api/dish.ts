@@ -78,12 +78,12 @@ export const commonDownload = (params: any) => {
   })
 }
 
-// 起售停售---批量起售停售接口
-export const dishStatusByStatus = (params: any) => {
+// 启售/停售：POST /dish/{id}/status，body: { status }
+export const enableOrDisableDish = (params: { id: string | number, status: number }) => {
   return request({
-    url: `/dish/status/${params.status}`,
+    url: `/dish/${params.id}/status`,
     method: 'post',
-    params: { id: params.id }
+    data: { status: params.status }
   })
 }
 
