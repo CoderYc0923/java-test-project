@@ -4,6 +4,13 @@ import lombok.Data;
 import jakarta.validation.constraints.NotNull;
 import io.swagger.v3.oas.annotations.media.Schema;
 
+/**
+ * 启用禁用分类DTO
+ * @param status 启用禁用状态
+ * @example 1:启用, 0:禁用
+ * @author Cyrus
+ * @since 2026-08-06
+ */
 @Data
 public final class CategoryEnableOrDisableDTO {
     

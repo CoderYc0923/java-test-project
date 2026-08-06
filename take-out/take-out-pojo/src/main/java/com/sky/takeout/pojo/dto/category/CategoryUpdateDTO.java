@@ -6,6 +6,14 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
+/**
+ * 更新分类DTO
+ * @param id 分类id
+ * @param name 分类名称
+ * @param sort 排序
+ * @author Cyrus
+ * @since 2026-08-06
+ */
 @Data
 public final class CategoryUpdateDTO {
 

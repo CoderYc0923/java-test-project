@@ -1,11 +1,21 @@
 package com.sky.takeout.pojo.dto.category;
 
+import com.sky.takeout.pojo.enums.CategoryType;
+
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
+/**
+ * 新增分类DTO
+ * @param name 分类名称
+ * @param type 分类类型
+ * @param sort 排序
+ * @author Cyrus
+ * @since 2026-08-06
+ */
 @Data
 public final class CategorySaveDTO {
 
@@ -16,7 +26,7 @@ public final class CategorySaveDTO {
 
     @NotNull(message = "分类类型不能为空")
     @Schema(description = "分类类型", example = "1：菜品分类，2：套餐分类")
-    private Integer type;
+    private CategoryType type;
 
     @NotNull(message = "排序不能为空")
     @Size(min = 0, max = 99, message = "排序必须在0-99之间")

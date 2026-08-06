@@ -41,11 +41,11 @@ export const addCategory = (params: any) => {
   });
 };
 
-// 修改---启用禁用接口
-export const enableOrDisableEmployee = (params: any) => {
+// 启用/禁用：POST /category/{id}/status，body: { status }
+export const enableOrDisableCategory = (params: { id: string | number, status: number }) => {
   return request({
-    url: `/category/status/${params.status}`,
+    url: `/category/${params.id}/status`,
     method: 'post',
-    params: { id:params.id }
+    data: { status: params.status }
   })
 }

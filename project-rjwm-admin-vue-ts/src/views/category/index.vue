@@ -156,7 +156,7 @@ import {
   deleCategory,
   editCategory,
   addCategory,
-  enableOrDisableEmployee
+  enableOrDisableCategory
 } from '@/api/category'
 import Empty from '@/components/Empty/index.vue'
 
@@ -315,7 +315,7 @@ export default class extends Vue {
       type: 'warning',
       customClass: 'customClass'
     }).then(() => {
-      enableOrDisableEmployee({ id: this.id, status: !this.status ? 1 : 0 })
+      enableOrDisableCategory({ id: this.id, status: !this.status ? 1 : 0 })
         .then(res => {
           if (String(res.status) === '200') {
             this.$message.success('分类状态更改成功！')

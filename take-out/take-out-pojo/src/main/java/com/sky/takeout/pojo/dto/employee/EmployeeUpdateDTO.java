@@ -9,6 +9,16 @@ import jakarta.validation.constraints.Pattern;
 import com.sky.takeout.common.constant.RegexConstant;
 import com.sky.takeout.pojo.enums.Sex;
 
+/**
+ * 更新员工DTO
+ * @param id id
+ * @param name 姓名
+ * @param phone 手机号
+ * @param sex 性别
+ * @param idNumber 身份证号
+ * @author Cyrus
+ * @since 2026-08-06
+ */
 @Data
 public class EmployeeUpdateDTO {
 
