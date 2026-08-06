@@ -3,8 +3,6 @@ package com.sky.takeout.pojo.dto.dish;
 import java.math.BigDecimal;
 import java.util.List;
 
-import com.sky.takeout.pojo.enums.SaleStatus;
-
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -30,7 +28,7 @@ public final class DishSaveDTO {
     private String description;
 
     @Schema(description = "售卖状态：0 停售，1 启售；新增前端默认 0")
-    private SaleStatus status;
+    private Integer status;
 
     @Schema(description = "口味列表")
     private List<DishFlavorDTO> flavors;

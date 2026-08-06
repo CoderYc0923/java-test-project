@@ -76,11 +76,12 @@ public class DishController {
         return Result.success();
     }
 
-    @Operation(summary = "启售 / 停售菜品")
+    @Operation(summary = "启售 / 停售菜品（id 支持逗号批量）")
     @PostMapping("/{id}/status")
     public Result<Void> enableOrDisable(
-            @PathVariable Long id,
+            @PathVariable String id,
             @RequestBody DishEnableOrDisableDTO enableOrDisableDTO) {
+        // path 用 String，兼容 "1" 与 "1,2,3"；现有前端传单个 id 不受影响
         dishService.enableOrDisable(id, enableOrDisableDTO);
         return Result.success();
     }
