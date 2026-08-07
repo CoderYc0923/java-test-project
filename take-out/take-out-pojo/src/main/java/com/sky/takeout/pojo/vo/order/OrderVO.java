@@ -1,12 +1,8 @@
-package com.sky.takeout.pojo.entity;
+package com.sky.takeout.pojo.vo.order;
 
-import java.time.LocalDateTime;
 import java.math.BigDecimal;
-
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
+import java.time.LocalDateTime;
+import java.util.List;
 
 import com.sky.takeout.pojo.enums.OrderStatus;
 import com.sky.takeout.pojo.enums.PayStatus;
@@ -14,10 +10,8 @@ import com.sky.takeout.pojo.enums.PayStatus;
 import lombok.Data;
 
 @Data
-@TableName("orders")
-public class Order {
+public final class OrderVO {
 
-    @TableId(type = IdType.AUTO)
     private Long id;
     private String number;
     private OrderStatus status;
@@ -42,4 +36,10 @@ public class Order {
     private Integer packAmount;
     private Integer tablewareNumber;
     private Integer tablewareStatus;
+
+    /** 列表菜品摘要，如：老坛酸菜鱼*1;米饭*1 */
+    private String orderDishes;
+
+    /** 详情明细；分页列表可为 null */
+    private List<OrderDetailVO> orderDetailList;
 }
