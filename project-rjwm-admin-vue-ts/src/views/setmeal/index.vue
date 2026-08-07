@@ -63,11 +63,11 @@
                          width="25" />
         <el-table-column prop="name"
                          label="套餐名称" />
-        <el-table-column prop="image"
+        <el-table-column prop="imageUrl"
                          label="图片">
           <template slot-scope="{ row }">
             <el-image style="width: 80px; height: 40px; border: none; cursor: pointer"
-                      :src="row.image">
+                      :src="row.imageUrl">
               <div slot="error"
                    class="image-slot">
                 <img src="./../../assets/noImg.png"
@@ -148,7 +148,7 @@ import {
   getSetmealPage,
   editSetmeal,
   deleteSetmeal,
-  setmealStatusByStatus,
+  enableOrDisableSetmeal,
   dishCategoryList
 } from '@/api/setMeal'
 import InputAutoComplete from '@/components/InputAutoComplete/index.vue'
@@ -207,7 +207,7 @@ export default class extends Vue {
       pageSize: this.pageSize,
       name: this.input || undefined,
       categoryId: this.categoryId || undefined,
-      status: this.dishStatus
+      status: this.dishStatus || undefined
     })
       .then(res => {
         if (res && res.data && res.data.code === 1) {
@@ -258,27 +258,16 @@ export default class extends Vue {
     })
   }
 
-  //状态更改
+  //状态更改：POST /setmeal/{id}/status，body: { status }
   private statusHandle(row: any) {
-    let params: any = {}
-    if (typeof row === 'string') {
-      if (this.checkList.length == 0) {
-        this.$message.error('批量操作，请先勾选操作菜品！')
-        return false
-      }
-      params.ids = this.checkList.join(',')
-      params.status = row
-    } else {
-      params.ids = row.id
-      params.status = row.status ? '0' : '1'
-    }
-
+    const id = row.id
+    const status = row.status ? 0 : 1
     this.$confirm('确认更改该套餐状态?', '提示', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning'
     }).then(() => {
-      setmealStatusByStatus(params)
+      enableOrDisableSetmeal({ id, status })
         .then(res => {
           if (res.data.code === 1) {
             this.$message.success('套餐状态已经更改成功！')

@@ -98,8 +98,9 @@
         <div>
           <el-form-item label="套餐图片:"
                         required
-                        prop="image">
+                        prop="imageOssPath">
             <image-upload :prop-image-url="imageUrl"
+                          biz-type="setmeal"
                           @imageChange="imageChange">
               图片大小不超过2M<br>仅能上传 PNG JPEG JPG类型图片<br>建议上传200*200或300*300尺寸的图片
             </image-upload>
@@ -207,7 +208,7 @@ export default class extends Vue {
     categoryId: '',
     price: '',
     code: '',
-    image: '',
+    imageOssPath: '',
     description: '',
     dishList: [],
     status: true,
@@ -237,9 +238,9 @@ export default class extends Vue {
         message: '请选择套餐分类',
         trigger: 'change'
       },
-      image: {
+      imageOssPath: {
         required: true,
-        message: '菜品图片不能为空'
+        message: '套餐图片不能为空'
       },
       price: {
         required: true,
@@ -273,14 +274,17 @@ export default class extends Vue {
   private async init() {
     querySetmealById(this.$route.query.id).then(res => {
       if (res && res.data && res.data.code === 1) {
-        this.ruleForm = res.data.data
-        this.ruleForm.status = res.data.data.status == '1'
-        ;(this.ruleForm as any).price = res.data.data.price
-        // this.imageUrl = `http://172.17.2.120:8080/common/download?name=${res.data.data.image}`
-        this.imageUrl = res.data.data.image
-        this.checkList = res.data.data.setmealDishes
-        this.dishTable = res.data.data.setmealDishes.reverse()
-        this.ruleForm.idType = res.data.data.categoryId
+        const data = res.data.data
+        this.ruleForm = {
+          ...data,
+          imageOssPath: data.imageOssPath || '',
+          price: data.price,
+          status: data.status == '1' || data.status === 1,
+          idType: data.categoryId
+        }
+        this.imageUrl = data.imageUrl || ''
+        this.checkList = data.setmealDishes || []
+        this.dishTable = (data.setmealDishes || []).slice().reverse()
       } else {
         this.$message.error(res.data.msg)
       }
@@ -355,18 +359,22 @@ export default class extends Vue {
         if (this.dishTable.length === 0) {
           return this.$message.error('套餐下菜品不能为空')
         }
-        if (!this.ruleForm.image) return this.$message.error('套餐图片不能为空')
-        let prams = { ...this.ruleForm } as any
+        if (!this.ruleForm.imageOssPath) {
+          return this.$message.error('套餐图片不能为空')
+        }
+        let prams: any = { ...this.ruleForm }
+        delete prams.imageUrl
+        delete prams.idType
+        delete prams.dishList
         prams.setmealDishes = this.dishTable.map((obj: any) => ({
           copies: obj.copies,
           dishId: obj.dishId,
           name: obj.name,
           price: obj.price
         }))
-        ;(prams as any).status =
+        prams.status =
           this.actionType === 'add' ? 0 : this.ruleForm.status ? 1 : 0
         prams.categoryId = this.ruleForm.idType
-        // delete prams.dishList
         if (this.actionType == 'add') {
           delete prams.id
           addSetmeal(prams)
@@ -384,11 +392,10 @@ export default class extends Vue {
                     categoryId: '',
                     price: '',
                     code: '',
-                    image: '',
+                    imageOssPath: '',
                     description: '',
                     dishList: [],
                     status: true,
-                    id: '',
                     idType: ''
                   } as any
                   this.imageUrl = ''
@@ -402,13 +409,14 @@ export default class extends Vue {
             })
         } else {
           delete prams.updateTime
+          delete prams.createTime
           editSetmeal(prams)
             .then(res => {
               if (res.data.code === 1) {
                 this.$message.success('套餐修改成功！')
                 this.$router.push({ path: '/setmeal' })
               } else {
-                // this.$message.error(res.data.desc || res.data.message)
+                this.$message.error(res.data.msg)
               }
             })
             .catch(err => {
@@ -416,14 +424,13 @@ export default class extends Vue {
             })
         }
       } else {
-        // console.log('error submit!!')
         return false
       }
     })
   }
 
-  imageChange(value: any) {
-    this.ruleForm.image = value
+  imageChange(objectKey: string) {
+    this.ruleForm.imageOssPath = objectKey
   }
 }
 </script>

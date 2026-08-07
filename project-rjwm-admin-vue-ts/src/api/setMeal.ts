@@ -10,8 +10,8 @@ export const getSetmealPage = (params: any) => {
   return request({
     url: '/setmeal/page',
     method: 'get',
-    params,
-  },)
+    params
+  })
 }
 
 // 删除数据接口
@@ -49,12 +49,15 @@ export const querySetmealById = (id: string | (string | null)[]) => {
   })
 }
 
-// 批量起售禁售
-export const setmealStatusByStatus = (params: any) => {
+// 启售/停售：POST /setmeal/{id}/status，body: { status }
+export const enableOrDisableSetmeal = (params: {
+  id: string | number
+  status: number
+}) => {
   return request({
-    url: `/setmeal/status/${params.status}`,
+    url: `/setmeal/${params.id}/status`,
     method: 'post',
-    params: { id: params.ids }
+    data: { status: params.status }
   })
 }
 
