@@ -64,11 +64,11 @@
                          width="25" />
         <el-table-column prop="name"
                          label="菜品名称" />
-        <el-table-column prop="image"
+        <el-table-column prop="imageUrl"
                          label="图片">
           <template slot-scope="{ row }">
             <el-image style="width: 80px; height: 40px; border: none; cursor: pointer"
-                      :src="row.image">
+                      :src="row.imageUrl">
               <div slot="error"
                    class="image-slot">
                 <img src="./../../assets/noImg.png"

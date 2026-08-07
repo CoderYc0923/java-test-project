@@ -37,6 +37,7 @@ import com.sky.takeout.system.mapper.CategoryMapper;
 import com.sky.takeout.system.mapper.DishFlavorMapper;
 import com.sky.takeout.system.mapper.DishMapper;
 import com.sky.takeout.system.mapper.SetmealDishMapper;
+import com.sky.takeout.system.oss.OssService;
 import com.sky.takeout.system.service.DishService;
 
 /**
@@ -49,6 +50,7 @@ public class DishServiceImpl implements DishService {
     private final DishFlavorMapper dishFlavorMapper;
     private final CategoryMapper categoryMapper;
     private final SetmealDishMapper setmealDishMapper;
+    private final OssService ossService;
 
     private static final Logger log = LoggerFactory.getLogger(DishServiceImpl.class);
 
@@ -56,11 +58,13 @@ public class DishServiceImpl implements DishService {
             DishMapper dishMapper,
             DishFlavorMapper dishFlavorMapper,
             CategoryMapper categoryMapper,
-            SetmealDishMapper setmealDishMapper) {
+            SetmealDishMapper setmealDishMapper,
+            OssService ossService) {
         this.dishMapper = dishMapper;
         this.dishFlavorMapper = dishFlavorMapper;
         this.categoryMapper = categoryMapper;
         this.setmealDishMapper = setmealDishMapper;
+        this.ossService = ossService;
     }
 
     @Override
@@ -166,7 +170,7 @@ public class DishServiceImpl implements DishService {
         dish.setName(saveDTO.getName());
         dish.setCategoryId(saveDTO.getCategoryId());
         dish.setPrice(saveDTO.getPrice());
-        dish.setImage(saveDTO.getImage());
+        dish.setImage(saveDTO.getImageOssPath());
         dish.setDescription(saveDTO.getDescription());
         dish.setStatus(saveDTO.getStatus() == null
                 ? SaleStatus.DISABLE
@@ -211,7 +215,7 @@ public class DishServiceImpl implements DishService {
         dish.setName(updateDTO.getName());
         dish.setCategoryId(updateDTO.getCategoryId());
         dish.setPrice(updateDTO.getPrice());
-        dish.setImage(updateDTO.getImage());
+        dish.setImage(updateDTO.getImageOssPath());
         dish.setDescription(updateDTO.getDescription());
         dish.setStatus(SaleStatus.fromCode(updateDTO.getStatus()));
         dishMapper.updateById(dish);
@@ -337,7 +341,8 @@ public class DishServiceImpl implements DishService {
                 .categoryId(dish.getCategoryId())
                 .categoryName(categoryName)
                 .price(dish.getPrice())
-                .image(dish.getImage())
+                .imageOssPath(dish.getImage())
+                .imageUrl(ossService.toAccessUrl(dish.getImage()))
                 .description(dish.getDescription())
                 .status(dish.getStatus())
                 .createTime(dish.getCreateTime())

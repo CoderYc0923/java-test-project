@@ -1,0 +1,8 @@
+oss:
+  endpoint: https://oss-cn-shanghai.aliyuncs.com
+  bucket: take-out
+  access-key-id: 
+  access-key-secret: 
+  # 可选：自定义域名；为空则用 https://{bucket}.{endpoint主机}/{key}
+  # domain: 
+  sign-expire-seconds: 3600

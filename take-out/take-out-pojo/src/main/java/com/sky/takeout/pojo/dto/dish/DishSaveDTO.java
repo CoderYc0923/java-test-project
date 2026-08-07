@@ -21,8 +21,8 @@ public final class DishSaveDTO {
     @Schema(description = "价格", example = "38.00")
     private BigDecimal price;
 
-    @Schema(description = "图片地址")
-    private String image;
+    @Schema(description = "图片 OSS 路径（objectKey），非签名 URL")
+    private String imageOssPath;
 
     @Schema(description = "描述")
     private String description;

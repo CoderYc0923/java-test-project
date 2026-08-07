@@ -84,7 +84,7 @@
         </el-form-item>
         <div>
           <el-form-item label="菜品图片:"
-                        prop="image">
+                        prop="imageOssPath">
             <image-upload :prop-image-url="imageUrl"
                           @imageChange="imageChange">
               图片大小不超过2M<br>仅能上传 PNG JPEG JPG类型图片<br>建议上传200*200或300*300尺寸的图片
@@ -165,7 +165,7 @@ export default class extends Vue {
     id: '',
     price: '',
     code: '',
-    image: '',
+    imageOssPath: '',
     description: '',
     dishFlavors: [],
     status: true,
@@ -195,7 +195,7 @@ export default class extends Vue {
       categoryId: [
         { required: true, message: '请选择菜品分类', trigger: 'change' }
       ],
-      image: {
+      imageOssPath: {
         required: true,
         message: '菜品图片不能为空'
       },
@@ -261,18 +261,22 @@ export default class extends Vue {
   private async init() {
     queryDishById(this.$route.query.id).then(res => {
       if (res && res.data && res.data.code === 1) {
-        this.ruleForm = { ...res.data.data }
-        this.ruleForm.price = String(res.data.data.price)
-        this.ruleForm.status = res.data.data.status == '1'
+        const data = res.data.data
+        this.ruleForm = {
+          ...data,
+          // 表单只保留 OSS path；展示用 imageUrl
+          imageOssPath: data.imageOssPath || '',
+          price: String(data.price),
+          status: data.status == '1' || data.status === 1
+        }
         this.dishFlavors =
-          res.data.data.flavors &&
-          res.data.data.flavors.map(obj => ({
+          data.flavors &&
+          data.flavors.map(obj => ({
             ...obj,
             value: JSON.parse(obj.value)
           }))
-        let arr = []
         this.getLeftDishFlavors()
-        this.imageUrl = res.data.data.image
+        this.imageUrl = data.imageUrl || ''
       } else {
         this.$message.error(res.data.msg)
       }
@@ -346,12 +350,12 @@ export default class extends Vue {
     ;(this.$refs[formName] as any).validate((valid: any) => {
       console.log(valid, 'valid')
       if (valid) {
-        if (!this.ruleForm.image) return this.$message.error('菜品图片不能为空')
+        if (!this.ruleForm.imageOssPath) return this.$message.error('菜品图片不能为空')
         let params: any = { ...this.ruleForm }
-        // params.flavors = this.dishFlavors
+        // 提交只带 imageOssPath，不把临时 imageUrl 传给后端
+        delete params.imageUrl
         params.status =
           this.actionType === 'add' ? 0 : this.ruleForm.status ? 1 : 0
-        // params.price *= 100
         params.categoryId = this.ruleForm.categoryId
         params.flavors = this.dishFlavors.map(obj => ({
           ...obj,
@@ -368,14 +372,13 @@ export default class extends Vue {
                   this.$router.push({ path: '/dish' })
                 } else {
                   this.dishFlavors = []
-                  // this.dishFlavorsData = []
                   this.imageUrl = ''
                   this.ruleForm = {
                     name: '',
                     id: '',
                     price: '',
                     code: '',
-                    image: '',
+                    imageOssPath: '',
                     description: '',
                     dishFlavors: [],
                     status: true,
@@ -401,12 +404,6 @@ export default class extends Vue {
               } else {
                 this.$message.error(res.data.desc || res.data.msg)
               }
-              // if (res.data.code == 200) {
-              //   this.$router.push({'path': '/dish'})
-              //   this.$message.success('菜品修改成功！')
-              // } else {
-              //   this.$message.error(res.data.desc || res.data.message)
-              // }
             })
             .catch(err => {
               this.$message.error('请求出错了：' + err.message)
@@ -418,8 +415,9 @@ export default class extends Vue {
     })
   }
 
-  imageChange(value: any) {
-    this.ruleForm.image = value
+  imageChange(objectKey: string) {
+    // 上传组件只回传 objectKey；预览 URL 已在组件内部维护
+    this.ruleForm.imageOssPath = objectKey
   }
 }
 </script>

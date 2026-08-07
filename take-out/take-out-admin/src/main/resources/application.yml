@@ -6,6 +6,13 @@ spring:
     username: takeout_rw
     password: TakeoutRw@123
     driver-class-name: com.mysql.cj.jdbc.Driver
+  #激活本地配置（本地有application-local.yml时，会优先使用本地配置）
+  profiles:
+    include: local
+  servlet:
+    multipart:
+      max-file-size: 5MB # 单文件上限（前端约 2MB，后端稍宽）
+      max-request-size: 5MB
 
 mybatis-plus:
   configuration:
@@ -19,3 +26,11 @@ jwt:
   admin-ttl: 7200000 # 2小时
   admin-token-name: Authorization
 
+oss:
+  endpoint: https://oss-cn-shanghai.aliyuncs.com
+  bucket: ${OSS_BUCKET:}
+  access-key-id: ${OSS_ACCESS_KEY_ID:}
+  access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
+  # 可选：自定义域名；为空则用 https://{bucket}.{endpoint主机}/{key}
+  domain: 
+  sign-expire-seconds: ${OSS_SIGN_EXPIRE_SECONDS:3600} # 签名 URL 有效期

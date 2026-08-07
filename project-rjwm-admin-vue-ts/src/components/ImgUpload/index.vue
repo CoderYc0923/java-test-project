@@ -6,6 +6,7 @@
                :class="{ borderNone: imageUrl }"
                class="avatar-uploader"
                action="/api/common/upload"
+               :data="{ type: bizType }"
                :show-file-list="false"
                :on-success="handleAvatarSuccess"
                :on-remove="handleRemove"
@@ -44,6 +45,8 @@ export default class extends Vue {
   @Prop({ default: '.jpg,.jpeg,.png' }) type: string
   @Prop({ default: 2 }) size: number
   @Prop({ default: '' }) propImageUrl: string
+  /** 上传业务前缀：dish / setmeal / common */
+  @Prop({ default: 'dish' }) bizType: string
 
   private headers = {
     Authorization: getToken()
@@ -65,17 +68,20 @@ export default class extends Vue {
   }
 
   handleAvatarSuccess(response: any, file: any, fileList: any) {
-    // this.imageUrl = response.data
-    // this.imageUrl = `http://172.17.2.120:8080/common/download?name=${response.data}`
-    this.imageUrl = `${response.data}`
-    // this.imageUrl = `${baseUrl}/common/download?name=${response.data}`
-
-    this.$emit('imageChange', this.imageUrl)
+    // el-upload 拿到的是后端 Result：{ code, data: { objectKey, url }, msg }
+    if (!response || response.code !== 1 || !response.data) {
+      this.$message.error((response && response.msg) || '图片上传失败')
+      return
+    }
+    const { objectKey, url } = response.data
+    this.imageUrl = url // 仅用于组件内预览
+    // 约定：父组件表单只存 objectKey（对应后端 imageOssPath）
+    this.$emit('imageChange', objectKey)
   }
 
   oploadImgDel() {
     this.imageUrl = ''
-    this.$emit('imageChange', this.imageUrl)
+    this.$emit('imageChange', '')
   }
   beforeAvatarUpload(file) {
     const isLt2M = file.size / 1024 / 1024 < this.size

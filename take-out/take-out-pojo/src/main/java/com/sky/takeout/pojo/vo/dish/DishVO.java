@@ -18,7 +18,10 @@ public final class DishVO {
     private Long categoryId;
     private String categoryName;
     private BigDecimal price;
-    private String image;
+    /** OSS objectKey（入库 / 提交用） */
+    private String imageOssPath;
+    /** 签名后的临时访问地址（展示用） */
+    private String imageUrl;
     private String description;
     private SaleStatus status;
     private LocalDateTime createTime;
