@@ -22,6 +22,7 @@ import com.sky.takeout.system.service.SetmealService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 
 @Tag(name = "套餐管理")
 @RestController
@@ -33,7 +34,7 @@ public class SetmealController {
 
     @Operation(summary = "分页查询套餐")
     @GetMapping("/page")
-    public Result<IPage<SetmealVO>> page(SetmealQueryDTO queryDTO) {
+    public Result<IPage<SetmealVO>> page(@Valid SetmealQueryDTO queryDTO) {
         return Result.success(setmealService.page(queryDTO));
     }
 
@@ -45,14 +46,14 @@ public class SetmealController {
 
     @Operation(summary = "新增套餐")
     @PostMapping
-    public Result<Void> save(@RequestBody SetmealSaveDTO saveDTO) {
+    public Result<Void> save(@Valid @RequestBody SetmealSaveDTO saveDTO) {
         setmealService.save(saveDTO);
         return Result.success();
     }
 
     @Operation(summary = "修改套餐")
     @PutMapping
-    public Result<Void> update(@RequestBody SetmealUpdateDTO updateDTO) {
+    public Result<Void> update(@Valid @RequestBody SetmealUpdateDTO updateDTO) {
         setmealService.update(updateDTO);
         return Result.success();
     }
@@ -68,7 +69,7 @@ public class SetmealController {
     @PostMapping("/{id}/status")
     public Result<Void> enableOrDisable(
             @PathVariable String id,
-            @RequestBody SetmealEnableOrDisableDTO enableOrDisableDTO) {
+            @Valid @RequestBody SetmealEnableOrDisableDTO enableOrDisableDTO) {
         setmealService.enableOrDisable(id, enableOrDisableDTO);
         return Result.success();
     }

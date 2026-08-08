@@ -66,3 +66,20 @@ export const getOrderListBy = (params: any) => {
     method: 'get' /*  */
   })
 }
+
+/** 管理端模拟下单（联调造待接单数据） */
+export const mockOrder = (data: {
+  remark?: string
+  items: Array<{
+    dishId?: number
+    setmealId?: number
+    number: number
+    dishFlavor?: string
+  }>
+}) => {
+  return request({
+    url: '/order/mock',
+    method: 'post',
+    data
+  })
+}

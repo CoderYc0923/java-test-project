@@ -61,8 +61,8 @@ public class SetmealServiceImpl implements SetmealService {
 
     @Override
     public IPage<SetmealVO> page(SetmealQueryDTO queryDTO) {
-        int pageNum = queryDTO.getPage() == null || queryDTO.getPage() <= 0 ? 1 : queryDTO.getPage();
-        int pageSize = queryDTO.getPageSize() == null || queryDTO.getPageSize() <= 0 ? 10 : queryDTO.getPageSize();
+        int pageNum = queryDTO.getPage() == null ? 1 : queryDTO.getPage();
+        int pageSize = queryDTO.getPageSize() == null ? 10 : queryDTO.getPageSize();
         Page<Setmeal> setmealPage = new Page<>(pageNum, pageSize);
 
         LambdaQueryWrapper<Setmeal> wrapper = new LambdaQueryWrapper<>();
@@ -102,13 +102,9 @@ public class SetmealServiceImpl implements SetmealService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void save(SetmealSaveDTO saveDTO) {
-        validateDishes(saveDTO.getSetmealDishes());
+        // 菜品列表/图片非空由 DTO 校验；这里只做业务规则
         validateNameUnique(saveDTO.getName(), null);
         Category category = requireSetmealCategory(saveDTO.getCategoryId());
-
-        if (!StringUtils.hasText(saveDTO.getImageOssPath())) {
-            throw new BusinessException(ErrorCode.ERROR, "套餐图片不能为空");
-        }
 
         Setmeal setmeal = new Setmeal();
         setmeal.setName(saveDTO.getName());
@@ -133,13 +129,8 @@ public class SetmealServiceImpl implements SetmealService {
             throw new BusinessException(ErrorCode.CONFLICT, "套餐不存在");
         }
 
-        validateDishes(updateDTO.getSetmealDishes());
         validateNameUnique(updateDTO.getName(), updateDTO.getId());
         Category category = requireSetmealCategory(updateDTO.getCategoryId());
-
-        if (!StringUtils.hasText(updateDTO.getImageOssPath())) {
-            throw new BusinessException(ErrorCode.ERROR, "套餐图片不能为空");
-        }
 
         setmeal.setName(updateDTO.getName());
         setmeal.setCategoryId(category.getId());
@@ -193,20 +184,6 @@ public class SetmealServiceImpl implements SetmealService {
         log.info("{}套餐成功, ids={}",
                 enableOrDisableDTO.getStatus() == SaleStatus.ENABLE ? "启售" : "停售",
                 idList);
-    }
-
-    private void validateDishes(List<SetmealDishDTO> dishes) {
-        if (dishes == null || dishes.isEmpty()) {
-            throw new BusinessException(ErrorCode.ERROR, "套餐下菜品不能为空");
-        }
-        for (SetmealDishDTO dish : dishes) {
-            if (dish.getDishId() == null) {
-                throw new BusinessException(ErrorCode.ERROR, "菜品 id 不能为空");
-            }
-            if (dish.getCopies() == null || dish.getCopies() < 1) {
-                throw new BusinessException(ErrorCode.ERROR, "菜品份数至少为 1");
-            }
-        }
     }
 
     private void validateNameUnique(String name, Long excludeId) {

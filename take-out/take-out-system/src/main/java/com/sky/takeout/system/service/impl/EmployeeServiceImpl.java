@@ -89,8 +89,8 @@ public class EmployeeServiceImpl implements EmployeeService {
     public IPage<Employee> page(EmployeePageQueryDTO pageQueryDTO) {
 
         // 1. 分页参数
-        int pageNum = pageQueryDTO.getPage() == null || pageQueryDTO.getPage() < 1 ? 1 : pageQueryDTO.getPage();
-        int pageSize = pageQueryDTO.getPageSize() == null || pageQueryDTO.getPageSize() < 1 ? 10 : pageQueryDTO.getPageSize();
+        int pageNum = pageQueryDTO.getPage() == null ? 1 : pageQueryDTO.getPage();
+        int pageSize = pageQueryDTO.getPageSize() == null ? 10 : pageQueryDTO.getPageSize();
 
         // 2. 分页构造器
         Page<Employee> page = new Page<>(pageNum, pageSize);

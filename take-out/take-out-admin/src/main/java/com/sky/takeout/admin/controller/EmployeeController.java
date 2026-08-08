@@ -51,7 +51,7 @@ public class EmployeeController {
 
     @Operation(summary = "员工登录")
     @PostMapping("/login")
-    public Result<EmployeeLoginVO> login(@RequestBody EmployeeLoginDTO loginDTO) {
+    public Result<EmployeeLoginVO> login(@Valid @RequestBody EmployeeLoginDTO loginDTO) {
         // 1. 登录
         Employee employee = employeeService.login(loginDTO);
 
@@ -73,7 +73,7 @@ public class EmployeeController {
 
     @Operation(summary = "分页查询员工")
     @GetMapping("/page")
-    public Result<IPage<EmployeeVO>> page(EmployeePageQueryDTO pageQueryDTO) {
+    public Result<IPage<EmployeeVO>> page(@Valid EmployeePageQueryDTO pageQueryDTO) {
         IPage<Employee> page = employeeService.page(pageQueryDTO);
         IPage<EmployeeVO> voPage = page.convert(EmployeeController::toVO);
         return Result.success(voPage);
@@ -81,7 +81,7 @@ public class EmployeeController {
 
     @Operation(summary = "新增员工")
     @PostMapping
-    public Result<Void> save( @Valid @RequestBody EmployeeSaveDTO saveDTO) {
+    public Result<Void> save(@Valid @RequestBody EmployeeSaveDTO saveDTO) {
         employeeService.save(saveDTO);
         return Result.success();
     }
@@ -95,7 +95,7 @@ public class EmployeeController {
 
     @Operation(summary = "启用禁用员工")
     @PostMapping("/{id}/status")
-    public Result<Void> enableOrDisable(@PathVariable Long id, @RequestBody EmployeeEnableOrDisableDTO enableOrDisableDTO) {
+    public Result<Void> enableOrDisable(@PathVariable Long id, @Valid @RequestBody EmployeeEnableOrDisableDTO enableOrDisableDTO) {
         employeeService.enableOrDisable(id, enableOrDisableDTO);
         return Result.success();
     }

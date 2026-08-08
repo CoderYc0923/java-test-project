@@ -70,8 +70,8 @@ public class DishServiceImpl implements DishService {
     @Override
     public IPage<DishVO> page(DishQueryDTO queryDTO) {
         // 1. 分页参数兜底
-        int pageNum = queryDTO.getPage() == null || queryDTO.getPage() <= 0 ? 1 : queryDTO.getPage();
-        int pageSize = queryDTO.getPageSize() == null || queryDTO.getPageSize() <= 0 ? 10 : queryDTO.getPageSize();
+        int pageNum = queryDTO.getPage() == null ? 1 : queryDTO.getPage();
+        int pageSize = queryDTO.getPageSize() == null ? 10 : queryDTO.getPageSize();
         Page<Dish> dishPage = new Page<>(pageNum, pageSize);
 
         // 2. 查询条件

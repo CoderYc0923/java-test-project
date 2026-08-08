@@ -24,6 +24,7 @@ import com.sky.takeout.system.service.DishService;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 
 @Tag(name = "菜品管理")
 @RestController
@@ -35,7 +36,7 @@ public class DishController {
 
     @Operation(summary = "分页查询菜品")
     @GetMapping("/page")
-    public Result<IPage<DishVO>> page(DishQueryDTO queryDTO) {
+    public Result<IPage<DishVO>> page(@Valid DishQueryDTO queryDTO) {
         IPage<DishVO> voPage = dishService.page(queryDTO);
 
         return Result.success(voPage);
@@ -57,14 +58,14 @@ public class DishController {
 
     @Operation(summary = "新增菜品")
     @PostMapping
-    public Result<Void> save(@RequestBody DishSaveDTO saveDTO) {
+    public Result<Void> save(@Valid @RequestBody DishSaveDTO saveDTO) {
         dishService.save(saveDTO);
         return Result.success();
     }
 
     @Operation(summary = "修改菜品")
     @PutMapping
-    public Result<Void> update(@RequestBody DishUpdateDTO updateDTO) {
+    public Result<Void> update(@Valid @RequestBody DishUpdateDTO updateDTO) {
         dishService.update(updateDTO);
         return Result.success();
     }
@@ -80,7 +81,7 @@ public class DishController {
     @PostMapping("/{id}/status")
     public Result<Void> enableOrDisable(
             @PathVariable String id,
-            @RequestBody DishEnableOrDisableDTO enableOrDisableDTO) {
+            @Valid @RequestBody DishEnableOrDisableDTO enableOrDisableDTO) {
         // path 用 String，兼容 "1" 与 "1,2,3"；现有前端传单个 id 不受影响
         dishService.enableOrDisable(id, enableOrDisableDTO);
         return Result.success();

@@ -1,6 +1,7 @@
 package com.sky.takeout.pojo.dto.dish;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotBlank;
 import lombok.Data;
 
 /**
@@ -12,9 +13,11 @@ public final class DishFlavorDTO {
     @Schema(description = "口味 id（修改时可选）")
     private Long id;
 
+    @NotBlank(message = "口味名称不能为空")
     @Schema(description = "口味名称", example = "辣度")
     private String name;
 
+    @NotBlank(message = "口味选项不能为空")
     @Schema(description = "口味选项 JSON 字符串", example = "[\"不辣\",\"微辣\",\"中辣\"]")
     private String value;
 }

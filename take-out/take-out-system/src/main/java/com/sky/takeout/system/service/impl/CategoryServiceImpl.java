@@ -57,8 +57,8 @@ public class CategoryServiceImpl implements CategoryService {
     @Override
     public IPage<Category> page(CategoryQueryDTO categoryQueryDTO) {
         
-        int pageNum = categoryQueryDTO.getPage() == null || categoryQueryDTO.getPage() < 1 ? 1 : categoryQueryDTO.getPage();
-        int pageSize = categoryQueryDTO.getPageSize() == null || categoryQueryDTO.getPageSize() < 1 ? 10 : categoryQueryDTO.getPageSize();
+        int pageNum = categoryQueryDTO.getPage() == null ? 1 : categoryQueryDTO.getPage();
+        int pageSize = categoryQueryDTO.getPageSize() == null ? 10 : categoryQueryDTO.getPageSize();
 
         // 分页构造器
         Page<Category> page = new Page<>(pageNum, pageSize);

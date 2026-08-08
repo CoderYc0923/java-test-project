@@ -8,9 +8,9 @@ import lombok.Getter;
 
 @Getter
 public enum PayStatus {
-    UNPAID(1, "未支付"),
-    PAID(2, "已支付"),
-    REFUNDED(3, "退款");
+    UNPAID(0, "未支付"),
+    PAID(1, "已支付"),
+    REFUNDED(2, "退款");
 
     @EnumValue // MyBatis-Plus 读写库用 code
     @JsonValue // 接口 JSON 吐数字

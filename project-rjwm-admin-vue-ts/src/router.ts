@@ -62,6 +62,15 @@ const router = new Router({
           }
         },
         {
+          path: "order/mock",
+          component: () =>
+            import(/* webpackChunkName: "orderMock" */ "@/views/orderDetails/mock.vue"),
+          meta: {
+            title: "模拟下单",
+            icon: "icon-order"
+          }
+        },
+        {
           path: "category",
           component: () =>
             import(/* webpackChunkName: "shopTable" */ "@/views/category/index.vue"),

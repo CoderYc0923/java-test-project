@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -42,7 +43,7 @@ public class CategoryController {
 
     @Operation(summary = "分页查询分类")
     @GetMapping("/page")
-    public Result<IPage<CategoryVO>> page(CategoryQueryDTO categoryQueryDTO) {
+    public Result<IPage<CategoryVO>> page(@Valid CategoryQueryDTO categoryQueryDTO) {
         IPage<Category> page = categoryService.page(categoryQueryDTO);
         IPage<CategoryVO> voPage = page.convert(CategoryController::toVO);
         return Result.success(voPage);
@@ -60,7 +61,7 @@ public class CategoryController {
 
     @Operation(summary = "新增分类")
     @PostMapping
-    public Result<Void> save(@RequestBody CategorySaveDTO categorySaveDTO) {
+    public Result<Void> save(@Valid @RequestBody CategorySaveDTO categorySaveDTO) {
         categoryService.save(categorySaveDTO);
 
         return Result.success();
@@ -68,7 +69,7 @@ public class CategoryController {
 
     @Operation(summary = "修改分类")
     @PutMapping
-    public Result<Void> update(@RequestBody CategoryUpdateDTO categoryUpdateDTO) {
+    public Result<Void> update(@Valid @RequestBody CategoryUpdateDTO categoryUpdateDTO) {
         categoryService.update(categoryUpdateDTO);
 
         return Result.success();
@@ -85,7 +86,7 @@ public class CategoryController {
 
     @Operation(summary = "启用禁用分类")
     @PostMapping("/{id}/status")
-    public Result<Void> enableOrDisable(@PathVariable Long id, @RequestBody CategoryEnableOrDisableDTO categoryEnableOrDisableDTO) {
+    public Result<Void> enableOrDisable(@PathVariable Long id, @Valid @RequestBody CategoryEnableOrDisableDTO categoryEnableOrDisableDTO) {
         categoryService.enableOrDisable(id, categoryEnableOrDisableDTO);
 
         return Result.success();
