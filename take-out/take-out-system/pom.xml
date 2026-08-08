@@ -16,6 +16,10 @@
             <artifactId>take-out-pojo</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.sky</groupId>
+            <artifactId>take-out-pay</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
         </dependency>

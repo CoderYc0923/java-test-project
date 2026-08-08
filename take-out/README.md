@@ -47,7 +47,7 @@ java -jar take-out-admin\target\take-out-admin-0.0.1-SNAPSHOT.jar
 - 仅 `spring-boot:run -pl take-out-admin` 且未 `install` 时，会报找不到 `take-out-framework` 等依赖
 ### 2.2 IDE 启动
 
-1. 打开根工程，确认右侧 Maven 中能看到 5 个子模块
+1. 打开根工程，确认右侧 Maven 中能看到全部子模块（含后续自建的 `take-out-pay`）
 2. 找到并运行：  
    `take-out-admin` → `com.sky.takeout.admin.TakeOutAdminApplication`
 
@@ -90,19 +90,32 @@ http://localhost:8080/api/hello
 take-out/                          # 父工程（packaging=pom），统一版本，不写业务
 ├── pom.xml
 ├── README.md                      # 本手册
-├── docs/                          # 设计/计划文档（可选查阅）
+├── docs/                          # 设计 / 计划 / 教程
+│   ├── requirements/              # 模块需求
+│   ├── tutorials/                 # 手敲教程（如支付中心 + Redis）
+│   └── superpowers/               # 设计与计划归档
+├── docker-compose.yml             # 本地 MySQL（可再加 Redis）
 ├── take-out-common/               # 通用能力
 ├── take-out-pojo/                 # 数据模型
-├── take-out-system/               # 系统业务（用户/角色等，当前占位）
-├── take-out-framework/            # 框架配置（异常、Web 等）
+├── take-out-pay/                  # 支付中心（学习版网关，手敲创建，见教程）
+├── take-out-system/               # 业务服务 / Mapper（员工、菜品、订单履约等）
+├── take-out-framework/            # 框架配置（异常、Security、Web 等）
 └── take-out-admin/                # 管理端启动入口（可打可执行 jar）
 ```
+
+说明：`take-out-pay` 按教程 [`docs/tutorials/2026-08-08-pay-package-redis.md`](docs/tutorials/2026-08-08-pay-package-redis.md) **自行创建**；创建前父 POM 里可能还没有该模块。
 
 依赖只允许 **向下**，禁止反向依赖：
 
 ```text
-admin → framework → system → pojo → common
+admin → framework → system → pay → pojo → common
+                      │
+                      └──→ pojo → common
+
+约束：pay ✗ 禁止依赖 system（用 OrderPayPort 由 system 实现，避免循环依赖）
 ```
+
+未引入 `take-out-pay` 时，仍是：`admin → framework → system → pojo → common`。
 
 ---
 
@@ -137,34 +150,44 @@ admin → framework → system → pojo → common
 
 后期开发：新建菜品、订单等模型 → 先写在这里（或未来拆到业务域模块自己的 domain）。
 
-### 4.4 `take-out-system` — 系统业务
+### 4.4 `take-out-pay` — 支付中心（可选/手敲）
 
 | 项 | 说明 |
 |----|------|
-| 作用 | 用户、角色、菜单、部门等「系统管理」业务 |
-| 包路径 | `com.sky.takeout.system.service` / `mapper`（当前为空占位） |
-| 约束 | 本阶段未接 MyBatis；接持久化后在此放 Service / Mapper |
+| 作用 | 学习版支付网关：Redis 幂等/锁、模拟支付；以后可拆独立服务 |
+| 包路径 | `com.sky.takeout.pay.config` / `redis` / `port` / `gateway` |
+| 依赖 | `common` + `pojo` + Redis；**不依赖** `system` |
+| 与订单协作 | 定义 `OrderPayPort`；由 `system` 实现并注入 |
+| 教程 | `docs/tutorials/2026-08-08-pay-package-redis.md` |
 
-后期开发：登录用户、权限相关 → 优先放 system，而不是塞进 admin。
+后期开发：验签回调、支付流水、对接微信 → 优先放 pay，而不是塞进 `OrderServiceImpl`。
 
-### 4.5 `take-out-framework` — 框架能力
+### 4.5 `take-out-system` — 业务服务
+
+| 项 | 说明 |
+|----|------|
+| 作用 | 员工、分类、菜品、套餐、**订单履约**等业务 Service / Mapper |
+| 包路径 | `com.sky.takeout.system.service` / `mapper` / `pay`（Port 实现）等 |
+| 约束 | 可依赖 `take-out-pay`；订单接单/派送等履约留在 system，支付细节下沉 pay |
+
+### 4.6 `take-out-framework` — 框架能力
 
 | 项 | 说明 |
 |----|------|
 | 作用 | Spring 相关基础设施 |
-| 已有 | `GlobalExceptionHandler`（异常 → `Result`）、`WebMvcConfig`（Web 占位） |
-| 包路径 | `com.sky.takeout.framework.web` / `config` |
+| 已有 | `GlobalExceptionHandler`、Security/JWT、Web、OpenAPI 等 |
+| 包路径 | `com.sky.takeout.framework.web` / `config` / `security` |
 
-后期开发：跨域、拦截器、Jackson 配置、AOP 日志 → 放这里。
+后期开发：跨域、拦截器、Jackson、AOP 日志 → 放这里。
 
-### 4.6 `take-out-admin` — 管理端入口
+### 4.7 `take-out-admin` — 管理端入口
 
 | 项 | 说明 |
 |----|------|
 | 作用 | **唯一（当前）可启动、可单独打包部署** 的应用 |
-| 已有 | `TakeOutAdminApplication`、`DemoController`、`application.yml` |
+| 已有 | `TakeOutAdminApplication`（`scanBasePackages = com.sky.takeout`）、Controller、`application.yml` |
 | 包路径 | `com.sky.takeout.admin.controller` 等 |
-| 注意 | 这里写 **管理端接口与启动配置**；业务逻辑尽量下沉到 system / 未来业务模块 |
+| 注意 | 这里写 **管理端 HTTP 与启动配置**；业务逻辑下沉到 system / pay |
 
 配置文件位置：
 
@@ -179,13 +202,15 @@ take-out-admin/src/main/resources/application.yml
 | 你要做的事 | 放到哪个模块 | 示例路径 |
 |------------|--------------|----------|
 | 新增管理端 HTTP 接口 | `take-out-admin` | `.../admin/controller/XxxController.java` |
-| 改端口、数据源、日志级别 | `take-out-admin` | `application.yml` |
-| 写业务 Service / Mapper | `take-out-system`（系统类）或未来业务模块 | `.../system/service/...` |
+| 改端口、数据源、Redis、日志 | `take-out-admin` | `application.yml` |
+| 写业务 Service / Mapper（含订单履约） | `take-out-system` | `.../system/service/...` |
+| 支付网关、支付锁/幂等、模拟支付 | `take-out-pay` | `.../pay/gateway|redis|port/` |
+| 实现支付回写订单（Port） | `take-out-system` | `.../system/pay/OrderPayPortImpl.java` |
 | 新增表实体 / 入参 DTO / 出参 VO | `take-out-pojo` | `.../pojo/entity|dto|vo/` |
 | 统一返回、业务异常、错误码 | `take-out-common` | `.../common/result|exception/` |
-| 全局异常、跨域、拦截器 | `take-out-framework` | `.../framework/web|config/` |
-| 新增用户端独立服务 | 新建 `take-out-user`（启动模块） | 与 admin 平级，自带 Application |
-| 新增菜品/订单等大业务域 | 新建 `module-dish` 等 | 被 admin/user 依赖，自己不启动 |
+| 全局异常、跨域、拦截器、Security | `take-out-framework` | `.../framework/...` |
+| 新增用户端独立服务 | 新建 `take-out-user`（启动模块） | 与 admin 平级 |
+| 支付中心手敲教程 | 文档 | `docs/tutorials/2026-08-08-pay-package-redis.md` |
 
 接口返回建议统一使用：
 
@@ -250,7 +275,8 @@ take-out-module-dish/   # 只含业务代码，一般不单独启动
 
 **已具备**
 
-- 多模块骨架与单向依赖
+- 多模块骨架与单向依赖（可扩展 `take-out-pay`）
+- 支付中心 + Redis 教程：`docs/tutorials/2026-08-08-pay-package-redis.md`
 - 统一返回 `Result`、业务异常、全局异常处理
 - 管理端示例接口 `/api/hello`
 

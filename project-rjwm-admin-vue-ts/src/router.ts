@@ -71,6 +71,15 @@ const router = new Router({
           }
         },
         {
+          path: "order/mockPay",
+          component: () =>
+            import(/* webpackChunkName: "orderMockPay" */ "@/views/orderDetails/mockPay.vue"),
+          meta: {
+            title: "模拟支付",
+            icon: "icon-order"
+          }
+        },
+        {
           path: "category",
           component: () =>
             import(/* webpackChunkName: "shopTable" */ "@/views/category/index.vue"),

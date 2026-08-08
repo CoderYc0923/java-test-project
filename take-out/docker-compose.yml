@@ -23,6 +23,23 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+  
+  redis:
+    image: redis:7.2
+    container_name: take-out-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - take-out-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
+  
 volumes:
   take-out-mysql-data:
+  take-out-redis-data:

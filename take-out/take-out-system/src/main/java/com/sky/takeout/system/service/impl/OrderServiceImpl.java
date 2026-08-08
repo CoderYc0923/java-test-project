@@ -360,7 +360,8 @@ public class OrderServiceImpl implements OrderService {
      */
     @Override
     public OrderMockVO mockPay(Long id) {
-
+        Order order = getOrder(id);
+        return toMockVO(order);
     }
 
     /**

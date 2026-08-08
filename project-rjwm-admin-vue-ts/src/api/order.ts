@@ -67,9 +67,10 @@ export const getOrderListBy = (params: any) => {
   })
 }
 
-/** 管理端模拟下单（联调造待接单数据） */
+/** 管理端模拟下单（生成待付款订单） */
 export const mockOrder = (data: {
   remark?: string
+  requestId?: string
   items: Array<{
     dishId?: number
     setmealId?: number
@@ -81,5 +82,13 @@ export const mockOrder = (data: {
     url: '/order/mock',
     method: 'post',
     data
+  })
+}
+
+/** 模拟支付：待付款 → 待接单 */
+export const mockPayOrder = (id: number | string) => {
+  return request({
+    url: `/order/mockPay/${id}`,
+    method: 'put'
   })
 }

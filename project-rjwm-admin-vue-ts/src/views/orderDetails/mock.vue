@@ -4,7 +4,13 @@
       <div class="tableBar">
         <span class="page-title">模拟下单</span>
         <span class="page-tip"
-          >勾选启售中的菜品/套餐，提交后生成待接单订单（后端接口待接）</span
+          >勾选启售菜品/套餐，提交后生成待付款订单，再去「模拟支付」完成支付</span
+        >
+        <el-button
+          type="text"
+          style="float: right"
+          @click="$router.push('/order/mockPay')"
+          >去模拟支付 →</el-button
         >
       </div>
 
@@ -297,21 +303,15 @@ export default class extends Vue {
       if (data.code === 1) {
         const order = data.data || {}
         this.$message.success(
-          `模拟下单成功${order.number ? '，订单号 ' + order.number : ''}`
+          `下单成功（待付款）${order.number ? '，订单号 ' + order.number : ''}`
         )
-        this.$confirm('是否前往订单管理查看？', '提示', {
-          confirmButtonText: '去看看',
-          cancelButtonText: '继续下单',
-          type: 'success',
+        this.clearSelection()
+        this.$router.push({
+          path: '/order/mockPay',
+          query: order.id != null ? { orderId: String(order.id) } : {},
         })
-          .then(() => {
-            this.$router.push({ path: '/order', query: { status: '2' } })
-          })
-          .catch(() => {
-            this.clearSelection()
-          })
       } else {
-        this.$message.error(data.msg || '模拟下单失败（若提示 404，说明后端尚未实现 /order/mock）')
+        this.$message.error(data.msg || '模拟下单失败')
       }
     } catch (e: any) {
       this.$message.error(

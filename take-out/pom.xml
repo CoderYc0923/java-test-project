@@ -23,6 +23,7 @@
         <module>take-out-system</module>
         <module>take-out-framework</module>
         <module>take-out-admin</module>
+        <module>take-out-pay</module>
     </modules>
 
     <properties>
@@ -57,6 +58,11 @@
             <dependency>
                 <groupId>com.sky</groupId>
                 <artifactId>take-out-framework</artifactId>
+                <version>${take-out.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.sky</groupId>
+                <artifactId>take-out-pay</artifactId>
                 <version>${take-out.version}</version>
             </dependency>
         </dependencies>
