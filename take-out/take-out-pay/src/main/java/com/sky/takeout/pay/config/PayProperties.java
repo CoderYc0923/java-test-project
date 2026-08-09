@@ -15,7 +15,7 @@ public class PayProperties {
     /**
      * 模拟支付的密钥
      */
-    private String mockSectet;
+    private String mockSecret;
 
     /**
      * 订单幂等性过期时间（秒）

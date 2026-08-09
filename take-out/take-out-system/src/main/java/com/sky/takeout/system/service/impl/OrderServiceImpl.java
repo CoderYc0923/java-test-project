@@ -22,6 +22,9 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.sky.takeout.common.exception.BusinessException;
 import com.sky.takeout.common.result.ErrorCode;
+import com.sky.takeout.pay.config.PayProperties;
+import com.sky.takeout.pay.gateway.MockPaymentGateway;
+import com.sky.takeout.pay.redis.RedisIdempotentHelper;
 import com.sky.takeout.pojo.dto.order.OrderCancelDTO;
 import com.sky.takeout.pojo.dto.order.OrderConfirmDTO;
 import com.sky.takeout.pojo.dto.order.OrderMockDTO;
@@ -69,17 +72,30 @@ public class OrderServiceImpl implements OrderService {
     private final OrderDetailMapper orderDetailMapper;
     private final DishMapper dishMapper;
     private final SetmealMapper setmealMapper;
+    private final MockPaymentGateway mockPaymentGateway;
+    private final RedisIdempotentHelper redisIdempotentHelper;
+    private final PayProperties payProperties;
+
+    /** 防连点下单：order:idempotent:{requestId} */
+    private static final String IDEMPOTENT_KEY_PREFIX = "order:idempotent:";
+    /** 占坑中：同 requestId 正在建单 */
+    private static final String PROCESSING = "PROCESSING";
 
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final Logger log = LoggerFactory.getLogger(OrderServiceImpl.class);
 
     private static final MockUser MOCK_USER = new MockUser();
 
-    public OrderServiceImpl(OrderMapper orderMapper, OrderDetailMapper orderDetailMapper, DishMapper dishMapper, SetmealMapper setmealMapper) {
+    public OrderServiceImpl(OrderMapper orderMapper, OrderDetailMapper orderDetailMapper, DishMapper dishMapper,
+            SetmealMapper setmealMapper, MockPaymentGateway mockPaymentGateway,
+            RedisIdempotentHelper redisIdempotentHelper, PayProperties payProperties) {
         this.orderMapper = orderMapper;
         this.orderDetailMapper = orderDetailMapper;
         this.dishMapper = dishMapper;
         this.setmealMapper = setmealMapper;
+        this.mockPaymentGateway = mockPaymentGateway;
+        this.redisIdempotentHelper = redisIdempotentHelper;
+        this.payProperties = payProperties;
     }
 
     @Override
@@ -122,7 +138,6 @@ public class OrderServiceImpl implements OrderService {
 
     }
 
-
     @Override
     public OrderVO getById(Long id) {
         Order order = orderMapper.selectById(id);
@@ -142,11 +157,14 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public OrderStatisticsVO statistics() {
         // status = 2 待接单
-        Long toBeConfirmed = orderMapper.selectCount(new LambdaQueryWrapper<Order>().eq(Order::getStatus, OrderStatus.TO_BE_CONFIRMED));
+        Long toBeConfirmed = orderMapper
+                .selectCount(new LambdaQueryWrapper<Order>().eq(Order::getStatus, OrderStatus.TO_BE_CONFIRMED));
         // status = 3 已接单
-        Long confirmed = orderMapper.selectCount(new LambdaQueryWrapper<Order>().eq(Order::getStatus, OrderStatus.CONFIRMED));
+        Long confirmed = orderMapper
+                .selectCount(new LambdaQueryWrapper<Order>().eq(Order::getStatus, OrderStatus.CONFIRMED));
         // status = 4 派送中
-        Long deliveryInProgress = orderMapper.selectCount(new LambdaQueryWrapper<Order>().eq(Order::getStatus, OrderStatus.DELIVERY_IN_PROGRESS));
+        Long deliveryInProgress = orderMapper
+                .selectCount(new LambdaQueryWrapper<Order>().eq(Order::getStatus, OrderStatus.DELIVERY_IN_PROGRESS));
 
         OrderStatisticsVO vo = new OrderStatisticsVO();
         vo.setToBeConfirmed(toBeConfirmed == null ? 0 : toBeConfirmed.intValue());
@@ -154,7 +172,6 @@ public class OrderServiceImpl implements OrderService {
         vo.setDeliveryInProgress(deliveryInProgress == null ? 0 : deliveryInProgress.intValue());
         return vo;
     }
-
 
     /**
      * 接单：只有待接单状态的订单才能接单
@@ -235,10 +252,12 @@ public class OrderServiceImpl implements OrderService {
     public void cancel(OrderCancelDTO cancelDTO) {
         Order order = getOrder(cancelDTO.getId());
         OrderStatus currentStatus = order.getStatus();
-        List<OrderStatus> cancelableStatuses = List.of(OrderStatus.TO_BE_CONFIRMED, OrderStatus.CONFIRMED, OrderStatus.DELIVERY_IN_PROGRESS);
+        List<OrderStatus> cancelableStatuses = List.of(OrderStatus.TO_BE_CONFIRMED, OrderStatus.CONFIRMED,
+                OrderStatus.DELIVERY_IN_PROGRESS);
 
         if (!cancelableStatuses.contains(currentStatus)) {
-            throw new BusinessException(ErrorCode.CONFLICT, "当前订单状态不允许取消：" + (currentStatus == null ? "null" : currentStatus.getMessage()));
+            throw new BusinessException(ErrorCode.CONFLICT,
+                    "当前订单状态不允许取消：" + (currentStatus == null ? "null" : currentStatus.getMessage()));
         }
 
         order.setStatus(OrderStatus.CANCELLED);
@@ -250,15 +269,81 @@ public class OrderServiceImpl implements OrderService {
     }
 
     /**
-     * 模拟下单
+     * 模拟下单（强制requestId+ redis幂等）
+     * trySetNx(PROCESSING) -> doMockCreate -> set(orderId)
+     * 失败delete，允许同requestId重试
+     * 重复请求：PROCESSING=处理中；已是orderId=返回原单
+     * 
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public OrderMockVO mock(OrderMockDTO mockDTO) {
+        // 强制幂等键：没有就不建单
+        if(!StringUtils.hasText(mockDTO.getRequestId())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "requestId不能为空");
+        }
+
+        // 幂等键
+        String requestId = mockDTO.getRequestId();
+        // 拼接幂等键
+        String key = IDEMPOTENT_KEY_PREFIX + requestId;
+
+        // 幂等键过期时间
+        Long ttl = payProperties.getOrderIdempotentTtlSeconds();
+        if (ttl == null || ttl <= 0) {
+            ttl = 300L;
+        }
+
+        // 判断是否是该订单第一次请求
+        boolean first = redisIdempotentHelper.trySetNx(key, PROCESSING, ttl);
+        // 若不是第一次请求
+        if(!first) {
+            // 拿到缓存中的订单id
+            String cached = redisIdempotentHelper.get(key);
+            // 若缓存中的订单id为PROCESSING，则说明该订单正在处理中，抛出异常
+            if(PROCESSING.equals(cached)) {
+                throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "下单处理中，请勿重复下单");
+            }
+            // 若缓存中的订单id不为空，则说明该订单已存在，返回原单
+            if (StringUtils.hasText(cached)) {
+                Order order = orderMapper.selectById(Long.valueOf(cached));
+
+                if (order != null) {
+                    log.info("订单{}已存在，返回原单", order.getId());
+
+                    return toMockVO(order);
+                }
+            }
+            // 若缓存中的订单id为空，则说明该订单不存在，抛出异常
+            throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "下单处理中，请勿重复下单");
+        }
+
+        // 若第一次请求，则创建订单
+        try {
+            // 创建订单
+            OrderMockVO vo = doMockCreate(mockDTO);
+            // 将订单id缓存到redis中
+            redisIdempotentHelper.set(key, String.valueOf(vo.getId()), ttl);
+            return vo;
+        } catch (RuntimeException e) {
+            redisIdempotentHelper.delete(key);
+            throw e;
+        }
+    }
+
+    /**
+     * 模拟支付
+     * 调用支付网关进行支付
+     */
+    @Override
+    public OrderMockVO mockPay(Long id) {
+        return toMockVO(mockPaymentGateway.pay(id));
+    }
+
+    private OrderMockVO doMockCreate(OrderMockDTO mockDTO) {
         List<OrderDetail> orderDetails = new ArrayList<>();
         BigDecimal totalAmount = BigDecimal.ZERO;
 
-        
         for (OrderMockItemDTO item : mockDTO.getItems()) {
             boolean isDish = item.getDishId() != null;
             boolean isSetmeal = item.getSetmealId() != null;
@@ -285,7 +370,8 @@ public class OrderServiceImpl implements OrderService {
                 orderDetail.setName(dish.getName());
                 orderDetail.setImage(dish.getImage());
                 orderDetail.setAmount(dish.getPrice());
-                orderDetail.setDishFlavor(StringUtils.hasText(item.getDishFlavor()) ? item.getDishFlavor().trim() : null);
+                orderDetail
+                        .setDishFlavor(StringUtils.hasText(item.getDishFlavor()) ? item.getDishFlavor().trim() : null);
 
             } else if (isSetmeal) {
                 Setmeal setmeal = setmealMapper.selectById(item.getSetmealId());
@@ -342,31 +428,19 @@ public class OrderServiceImpl implements OrderService {
         orderMapper.insert(order);
 
         // 批量插入明细
-        for(OrderDetail orderDetail : orderDetails) {
+        for (OrderDetail orderDetail : orderDetails) {
             orderDetail.setOrderId(order.getId());
             orderDetailMapper.insert(orderDetail);
         }
 
         log.info("订单{}下单成功", order.getId());
         return toMockVO(order);
-
-    }
-
-
-    /**
-     * 模拟支付
-     * 真项目里这里会：验签、核对金额、防重复通知(幂等)。
-     * 我们用状态校验代替：只有「待付款 + 未支付」才能付
-     */
-    @Override
-    public OrderMockVO mockPay(Long id) {
-        Order order = getOrder(id);
-        return toMockVO(order);
     }
 
     /**
      * 生成订单号
      * 格式：ORDyyyyMMddHHmmssXXXX
+     * 
      * @return
      */
     private String generateOrderNumber() {
@@ -400,9 +474,9 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
-
     /**
      * 批量查询明细，并按 orderId 分组
+     * 
      * @param orderIds
      * @return
      */
@@ -412,8 +486,7 @@ public class OrderServiceImpl implements OrderService {
         }
 
         List<OrderDetail> allDetails = orderDetailMapper.selectList(
-            new LambdaQueryWrapper<OrderDetail>().in(OrderDetail::getOrderId, orderIds)
-        );
+                new LambdaQueryWrapper<OrderDetail>().in(OrderDetail::getOrderId, orderIds));
 
         return allDetails.stream().collect(Collectors.groupingBy(OrderDetail::getOrderId));
     }

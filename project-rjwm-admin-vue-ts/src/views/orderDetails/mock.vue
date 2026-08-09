@@ -294,9 +294,14 @@ export default class extends Vue {
       }
     })
 
+    // 每次点击提交生成新幂等键；连点同一键由后端 Redis 去重
+    const requestId =
+      String(Date.now()) + '-' + Math.random().toString(16).slice(2)
+
     this.submitting = true
     try {
       const { data } = await mockOrder({
+        requestId,
         remark: this.remark || undefined,
         items,
       })

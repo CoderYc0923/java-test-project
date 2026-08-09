@@ -69,8 +69,9 @@ export const getOrderListBy = (params: any) => {
 
 /** 管理端模拟下单（生成待付款订单） */
 export const mockOrder = (data: {
+  /** 客户端幂等键，必填；同键重复提交只下一笔 */
+  requestId: string
   remark?: string
-  requestId?: string
   items: Array<{
     dishId?: number
     setmealId?: number

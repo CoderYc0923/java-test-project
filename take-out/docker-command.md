@@ -101,33 +101,75 @@ docker compose logs -f redis
 docker exec -it take-out-redis redis-cli ping
 ```
 
-### 常用查看 / 调试
+### 进入 redis-cli
 
 ```bash
-# 进入交互
 docker exec -it take-out-redis redis-cli
-
-# 下面在 redis-cli 里执行，或写成：
-# docker exec -it take-out-redis redis-cli KEYS 'order:*'
-
-KEYS *
-KEYS order:*
-GET order:idempotent:你的-requestId
-TTL order:idempotent:你的-requestId
-
-# 清空当前 DB（学习环境可用；别在生产乱 FLUSH）
-FLUSHDB
-
-# 退出
-exit
+# 退出：exit 或 Ctrl+D
 ```
 
-一行命令示例：
+下面命令可在交互里敲，也可一行：`docker exec -it take-out-redis redis-cli <命令>`。
+
+### 本项目 key 约定
+
+| 用途 | key 格式 | value 含义 |
+|------|----------|------------|
+| 防重复下单 | `order:idempotent:{requestId}` | `PROCESSING`=建单中；数字=已成功的 orderId |
+| 支付锁 | `order:pay:lock:{orderId}` | 随机 token（谁加的锁） |
+
+### 支付 / 下单排障常用
+
+```bash
+# ----- 查有哪些业务 key -----
+KEYS order:*
+KEYS order:idempotent:*
+KEYS order:pay:lock:*
+
+# ----- 下单幂等 -----
+# 看某个 requestId 当前状态
+GET order:idempotent:你的-requestId
+# 剩余存活秒数（-1 永不过期，-2 key 不存在）
+TTL order:idempotent:你的-requestId
+
+# ----- 支付锁 -----
+GET order:pay:lock:1005
+TTL order:pay:lock:1005
+
+# ----- 读 / 写 / 删（调试用）-----
+SET demo:key hello EX 60          # 写入，60 秒过期
+GET demo:key
+DEL demo:key                      # 删单个
+DEL order:pay:lock:1005           # 手动清死锁（学习环境；等 TTL 过期也行）
+
+# ----- 占坑测试（对应代码里的 SET NX）-----
+SET order:pay:lock:999 test-token NX EX 10
+# 再执行一次：应返回 (nil)，说明抢锁失败
+
+# ----- 危险：清空当前库（仅学习）-----
+FLUSHDB
+```
+
+一行示例：
 
 ```bash
 docker exec -it take-out-redis redis-cli KEYS "order:*"
-docker exec -it take-out-redis redis-cli GET "order:pay:lock:1001"
+docker exec -it take-out-redis redis-cli GET "order:pay:lock:1005"
+docker exec -it take-out-redis redis-cli TTL "order:pay:lock:1005"
+docker exec -it take-out-redis redis-cli DEL "order:pay:lock:1005"
 ```
+
+### 其它偶尔用到的
+
+```bash
+PING                 # 期望 PONG
+DBSIZE               # 当前库 key 数量
+TYPE order:pay:lock:1005   # 类型，一般是 string
+EXISTS order:pay:lock:1005 # 1=存在 0=不存在
+INFO keyspace        # 各库大概有多少 key
+MONITOR              # 实时看所有命令（很吵，Ctrl+C 停；别长期开）
+```
+
+> 生产环境少用 `KEYS *`（会扫全库），应用 `SCAN`；学习项目数据少，用 `KEYS` 没问题。
 
 ### Redis 连接信息（给 Spring）
 

@@ -93,4 +93,9 @@ public class OrderController {
     public Result<OrderMockVO> mock(@Valid @RequestBody OrderMockDTO mockDTO) {
         return Result.success(orderService.mock(mockDTO));
     }
+
+    @PutMapping("/mockPay/{id}")
+    public Result<OrderMockVO> mockPay(@PathVariable Long id) {
+        return Result.success(orderService.mockPay(id));
+    }
 }
