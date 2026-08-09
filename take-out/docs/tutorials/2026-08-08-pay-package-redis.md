@@ -1059,6 +1059,197 @@ public Result<OrderMockVO> mockPay(@PathVariable Long id) {
 - Lua 解锁  
 - 将来 `take-out-pay` 独立 Boot 启动类 + HTTP，system 改远程调用  
 
+#### 11.1 Lua 解锁  
+
+# Lua 解锁完整教程（手敲）
+
+只改 `RedisIdempotentHelper.unlock`；`MockPaymentGateway` / `tryLock` 不用动。
+
+------
+
+## 1. 为啥要改
+
+现在：
+
+```t
+GET key  →  看是不是我的 token  →  DEL key
+```
+
+中间有缝：
+
+```tex
+你：GET 发现还是自己的 token
+        （此时锁 TTL 刚好过期）
+别人：SET NX 抢到同一把锁（新 token）
+你：DEL  →  误删了别人的锁
+```
+
+
+
+Lua 在 Redis 里一条脚本跑完，中间不会插别的命令。
+
+------
+
+## 2. Lua 脚本本身
+
+```java
+-- KEYS[1] = 锁的 key
+-- ARGV[1] = 加锁时留下的 token
+if redis.call('get', KEYS[1]) == ARGV[1] then
+  return redis.call('del', KEYS[1])   -- 1=删成功
+else
+  return 0                            -- 不是自己的锁 / key 已没了
+end
+```
+
+
+
+------
+
+## 3. 完整 `RedisIdempotentHelper.java`（带注释）
+
+直接整文件覆盖手打：
+
+```java
+package com.sky.takeout.pay.redis;
+
+import java.time.Duration;
+import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
+
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.stereotype.Component;
+
+/**
+ * Redis 幂等 / 锁 小工具。
+ *
+ * 1. SET NX + TTL：占坑、加锁
+ * 2. 解锁：Lua 原子「相等才删」，避免误删别人的锁
+ */
+@Component
+public class RedisIdempotentHelper {
+
+    /**
+     * 解锁脚本（类加载时初始化一次即可）。
+     * 返回 Long：1=删了自己的锁，0=没删（token 不匹配或 key 不存在）。
+     */
+    private static final DefaultRedisScript<Long> UNLOCK_SCRIPT = new DefaultRedisScript<>();
+
+    static {
+        UNLOCK_SCRIPT.setResultType(Long.class);
+        // 注意：字符串里的空格/换行不影响 Lua；写成一行也行
+        UNLOCK_SCRIPT.setScriptText(
+                "if redis.call('get', KEYS[1]) == ARGV[1] then "
+                        + "return redis.call('del', KEYS[1]) "
+                        + "else return 0 end"
+        );
+    }
+
+    private final StringRedisTemplate redis;
+
+    public RedisIdempotentHelper(StringRedisTemplate redis) {
+        this.redis = redis;
+    }
+
+    /**
+     * SET key value NX + 过期时间。
+     * 只有 key 不存在才写入；成功 true，已被占用 false。
+     */
+    public boolean trySetNx(String key, String value, Long ttlSeconds) {
+        Boolean ok = redis.opsForValue()
+                .setIfAbsent(key, value, Duration.ofSeconds(ttlSeconds));
+        return Boolean.TRUE.equals(ok);
+    }
+
+    /** 覆盖写入 + TTL（秒）。用 Duration，避免 Spring Data Redis 4.1 弃用的 TimeUnit 重载。 */
+    public void set(String key, String value, Long ttlSeconds) {
+        redis.opsForValue().set(key, value, Duration.ofSeconds(ttlSeconds));
+    }
+
+    public String get(String key) {
+        return redis.opsForValue().get(key);
+    }
+
+    public void delete(String key) {
+        redis.delete(key);
+    }
+
+    /**
+     * 加锁：value 用随机 token，解锁时要带上。
+     * @return token；抢不到返回 null
+     */
+    public String tryLock(String key, Long ttlSeconds) {
+        String token = UUID.randomUUID().toString();
+        return trySetNx(key, token, ttlSeconds) ? token : null;
+    }
+
+    /**
+     * Lua 原子解锁：仅当当前 value == token 时才 DEL。
+     *
+     * 对比旧写法：
+     *   get → equals → delete   （两步，有竞态）
+     * 现在：
+     *   EVAL 脚本一次完成 get+比较+del（原子）
+     */
+    public void unlock(String key, String token) {
+        if (token == null) {
+            return;
+        }
+        // KEYS 列表、ARGV 列表（这里 ARGV 只有 token）
+        List<String> keys = Collections.singletonList(key);
+        Long result = redis.execute(UNLOCK_SCRIPT, keys, token);
+        // result == 1 删成功；0 表示不是自己的锁（可打日志，一般可忽略）
+        // if (result != null && result == 1L) { ... }
+    }
+}
+```
+
+
+
+------
+
+## 4. 编译重启
+
+mvn -pl take-out-pay -am install -DskipTests
+
+*# 再重启 take-out-admin*
+
+`MockPaymentGateway` 仍是 `tryLock` / `unlock`，不用改调用方。
+
+------
+
+## 5. 怎么自己验一下（可选）
+
+docker exec -it take-out-redis redis-cli
+
+*# 模拟一把锁*
+
+SET order:pay:lock:999 my-token EX 30
+
+*# 在 redis-cli 里直接跑脚本（和 Java 同一逻辑）*
+
+EVAL "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end" 1 order:pay:lock:999 wrong-token
+
+*# 应返回 0，key 还在*
+
+EVAL "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end" 1 order:pay:lock:999 my-token
+
+*# 应返回 1，key 被删*
+
+业务上：对未支付订单连点 `mockPay`，仍应只成功一次。
+
+------
+
+## 6. 面试一句话
+
+加锁：`SET key token NX EX ttl`；解锁：Lua 判断 value 等于自己的 token 再删，保证不误删他人锁。
+
+#### 11.2 回调体 + HMAC 验签 + 核金额 + nonce 去重
+
+#### 11.3 将来 `take-out-pay` 独立 Boot 启动类 + HTTP，system 改远程调用  
+
 ---
 
 ## 12. 相关路径
