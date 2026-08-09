@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.sky.takeout.common.result.Result;
+import com.sky.takeout.pojo.dto.order.MockPayNotifyDTO;
 import com.sky.takeout.pojo.dto.order.OrderCancelDTO;
 import com.sky.takeout.pojo.dto.order.OrderConfirmDTO;
 import com.sky.takeout.pojo.dto.order.OrderQueryDTO;
@@ -94,8 +95,15 @@ public class OrderController {
         return Result.success(orderService.mock(mockDTO));
     }
 
+    @PostMapping("/mockPay/notify")
+    public Result<OrderMockVO> mockPayNotify(@Valid @RequestBody MockPayNotifyDTO dto) {
+        return Result.success(orderService.mockPayNotify(dto));
+    }
+
     @PutMapping("/mockPay/{id}")
     public Result<OrderMockVO> mockPay(@PathVariable Long id) {
+        // data 里仍是当前订单；提示前端：请等待回调后刷新
         return Result.success(orderService.mockPay(id));
     }
+    
 }

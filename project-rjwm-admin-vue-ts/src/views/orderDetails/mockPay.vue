@@ -3,7 +3,9 @@
     <div class="container mock-pay">
       <div class="tableBar">
         <span class="page-title">模拟支付</span>
-        <span class="page-tip">展示待付款订单，点击「模拟支付」走后端 mockPay</span>
+        <span class="page-tip"
+          >待付款列表；点支付后等待模拟微信回调（约 1～2 秒），页面会自动轮询</span
+        >
         <div class="bar-actions">
           <el-button @click="$router.push('/order/mock')">去模拟下单</el-button>
           <el-button type="primary" :loading="loading" @click="loadList"
@@ -173,12 +175,40 @@ export default class extends Vue {
     return map[key] || key
   }
 
+  private sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  /**
+   * 列表只查 status=1 待付款；回调成功后该单会从列表消失，即视为支付成功。
+   */
+  private async pollUntilPaid(orderId: number | string) {
+    const maxTries = 12
+    for (let i = 0; i < maxTries; i++) {
+      await this.sleep(800)
+      await this.loadList()
+      const stillPending = this.tableData.some(
+        (x: any) => String(x.id) === String(orderId)
+      )
+      if (!stillPending) {
+        return true
+      }
+    }
+    return false
+  }
+
   private async handlePay(row: any) {
     try {
       await this.$confirm(
-        `确认模拟支付订单 ${row.number}？金额 ¥${this.formatAmount(row.amount)}`,
+        `确认模拟支付订单 ${row.number}？金额 ¥${this.formatAmount(
+          row.amount
+        )}（将异步等待微信回调）`,
         '模拟支付',
-        { type: 'warning', confirmButtonText: '确认支付', cancelButtonText: '取消' }
+        {
+          type: 'warning',
+          confirmButtonText: '确认支付',
+          cancelButtonText: '取消',
+        }
       )
     } catch (e) {
       return
@@ -187,10 +217,18 @@ export default class extends Vue {
     this.payingId = row.id
     try {
       const { data } = await mockPayOrder(row.id)
-      if (data.code === 1) {
+      if (data.code !== 1) {
+        this.$message.error(data.msg || '发起支付失败')
+        return
+      }
+
+      // PUT 只表示「已发起」；真正改库在异步 notify 之后
+      this.$message.success('已发起支付，等待模拟微信回调…')
+      this.highlightId = null
+
+      const paid = await this.pollUntilPaid(row.id)
+      if (paid) {
         this.$message.success('支付成功，订单已进入待接单')
-        this.highlightId = null
-        await this.loadList()
         this.$confirm('是否前往订单管理查看待接单？', '提示', {
           confirmButtonText: '去看看',
           cancelButtonText: '留在本页',
@@ -203,7 +241,7 @@ export default class extends Vue {
             /* 留在本页 */
           })
       } else {
-        this.$message.error(data.msg || '模拟支付失败')
+        this.$message.warning('仍未收到支付结果，请稍后点刷新或检查后端回调日志')
       }
     } catch (e) {
       const err: any = e

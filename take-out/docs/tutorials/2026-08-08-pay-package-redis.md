@@ -1248,6 +1248,8 @@ EVAL "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEY
 
 #### 11.2 回调体 + HMAC 验签 + 核金额 + nonce 去重
 
+[take-out/docs/tutorials/2026-08-09-mock-wechat-pay-notify.md](vscode-file://vscode-app/d:/cursor/resources/app/out/vs/code/electron-sandbox/workbench/take-out/docs/tutorials/2026-08-09-mock-wechat-pay-notify.md)
+
 #### 11.3 将来 `take-out-pay` 独立 Boot 启动类 + HTTP，system 改远程调用  
 
 ---

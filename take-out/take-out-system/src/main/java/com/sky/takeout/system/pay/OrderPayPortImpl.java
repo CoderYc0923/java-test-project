@@ -27,6 +27,15 @@ public class OrderPayPortImpl implements OrderPayPort {
         return order;
     }
 
+    @Override
+    public Order findOrderByNumber(String orderNumber) {
+        if (orderNumber == null || orderNumber.isBlank()) {
+            return null;
+        }
+
+        return orderMapper.selectOne(new LambdaQueryWrapper<Order>().eq(Order::getNumber, orderNumber).last("limit 1"));
+    }
+
     /**
      * 原理：CAS：Compare And Swap
      * 

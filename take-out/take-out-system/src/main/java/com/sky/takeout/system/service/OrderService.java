@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.sky.takeout.pojo.dto.order.OrderConfirmDTO;
 import com.sky.takeout.pojo.dto.order.OrderQueryDTO;
 import com.sky.takeout.pojo.dto.order.OrderRejectionDTO;
+import com.sky.takeout.pojo.dto.order.MockPayNotifyDTO;
 import com.sky.takeout.pojo.dto.order.OrderCancelDTO;
 import com.sky.takeout.pojo.dto.order.OrderMockDTO;
 import com.sky.takeout.pojo.vo.order.OrderMockVO;
@@ -30,4 +31,6 @@ public interface OrderService {
     OrderMockVO mock(OrderMockDTO mockDTO);
 
     OrderMockVO mockPay(Long id);
+
+    OrderMockVO mockPayNotify(MockPayNotifyDTO dto);
 }

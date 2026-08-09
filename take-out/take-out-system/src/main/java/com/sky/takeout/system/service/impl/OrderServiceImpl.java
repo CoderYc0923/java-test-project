@@ -25,6 +25,7 @@ import com.sky.takeout.common.result.ErrorCode;
 import com.sky.takeout.pay.config.PayProperties;
 import com.sky.takeout.pay.gateway.MockPaymentGateway;
 import com.sky.takeout.pay.redis.RedisIdempotentHelper;
+import com.sky.takeout.pojo.dto.order.MockPayNotifyDTO;
 import com.sky.takeout.pojo.dto.order.OrderCancelDTO;
 import com.sky.takeout.pojo.dto.order.OrderConfirmDTO;
 import com.sky.takeout.pojo.dto.order.OrderMockDTO;
@@ -337,7 +338,12 @@ public class OrderServiceImpl implements OrderService {
      */
     @Override
     public OrderMockVO mockPay(Long id) {
-        return toMockVO(mockPaymentGateway.pay(id));
+        return toMockVO(mockPaymentGateway.requestPay(id));
+    }
+
+    @Override
+    public OrderMockVO mockPayNotify(MockPayNotifyDTO dto) {
+        return toMockVO(mockPaymentGateway.handlePayNotify(dto));
     }
 
     private OrderMockVO doMockCreate(OrderMockDTO mockDTO) {

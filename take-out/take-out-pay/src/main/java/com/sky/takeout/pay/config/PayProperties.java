@@ -13,7 +13,7 @@ import lombok.Data;
 public class PayProperties {
 
     /**
-     * 模拟支付的密钥
+     * 模拟微信API密钥（签名用）
      */
     private String mockSecret;
 
@@ -26,4 +26,19 @@ public class PayProperties {
      * 支付锁过期时间（秒）
      */
     private Long payLockTtlSeconds;
+
+    /**
+     * 回调nonce去重TTL（秒）
+     */
+    private Long nonceTtlSeconds = 600L;
+
+    /**
+     * 允许的时间戳偏差（秒），防重放
+     */
+    private Long timestampSkewSeconds = 300L;
+
+    /**
+     * 微信延迟回调（毫秒）
+     */
+    private Long notifyDelayMs = 1500L;
 }

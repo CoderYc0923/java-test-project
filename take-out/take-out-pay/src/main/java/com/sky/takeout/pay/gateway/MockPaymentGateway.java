@@ -2,14 +2,18 @@ package com.sky.takeout.pay.gateway;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import com.sky.takeout.common.exception.BusinessException;
 import com.sky.takeout.common.result.ErrorCode;
 import com.sky.takeout.pay.config.PayProperties;
 import com.sky.takeout.pay.port.OrderPayPort;
 import com.sky.takeout.pay.redis.RedisIdempotentHelper;
+import com.sky.takeout.pay.sign.HmacPaySignUtil;
+import com.sky.takeout.pojo.dto.order.MockPayNotifyDTO;
 import com.sky.takeout.pojo.entity.Order;
 import com.sky.takeout.pojo.enums.OrderStatus;
 import com.sky.takeout.pojo.enums.PayStatus;
@@ -19,7 +23,8 @@ import com.sky.takeout.pojo.enums.PayStatus;
  * 职责：
  * 1. 校验订单是否可支付
  * 2. 用redis锁防止同一订单并发重复点支付
- * 3. 通过OrderPayPort做DB CAS：待付款+未支付 -> 待接单+已支付
+ * 3. 调用模拟微信支付客户端，模拟微信支付回调
+ * 4. 通过OrderPayPort做DB CAS：待付款+未支付 -> 待接单+已支付
  * 
  * 注意：本类不写 SQL、不直接依赖 Mapper；改库只走端口（system 实现）
  * MockPaymentGateway
@@ -27,31 +32,29 @@ import com.sky.takeout.pojo.enums.PayStatus;
 @Component
 public class MockPaymentGateway {
 
+    private final MockWeChatPayClient mockWeChatPayClient;
     private final OrderPayPort orderPayPort;
     private final PayProperties payProperties;
     private final RedisIdempotentHelper redisIdempotentHelper;
 
     private static final Logger log = LoggerFactory.getLogger(MockPaymentGateway.class);
     private static final String PAY_LOCK_PREFIX = "order:pay:lock:";
+    private static final String NONCE_KEY_PREFIX = "order:pay:nonce:";
 
-    public MockPaymentGateway(OrderPayPort orderPayPort, PayProperties payProperties, RedisIdempotentHelper redisIdempotentHelper) {
+    public MockPaymentGateway(OrderPayPort orderPayPort, PayProperties payProperties,
+            RedisIdempotentHelper redisIdempotentHelper, @Lazy MockWeChatPayClient mockWeChatPayClient) {
         this.orderPayPort = orderPayPort;
         this.payProperties = payProperties;
         this.redisIdempotentHelper = redisIdempotentHelper;
+        this.mockWeChatPayClient = mockWeChatPayClient;
     }
 
     /**
-     * 模拟支付成功
+     * 用户支付接口
      * 
-     * 流程：
-     * 查单 -> 已付则直接返回（业务幂等）
-     *      ->抢redis锁（防连点）
-     *      ->锁内再查一次 + 状态校验
-     *      ->CAS更新支付状态
-     *      ->finally释放锁
+     * @return 当前订单
      */
-    @Transactional
-    public Order pay(Long orderId) {
+    public Order requestPay(Long orderId) {
         if (orderId == null) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "订单id不能为空");
         }
@@ -63,54 +66,166 @@ public class MockPaymentGateway {
             return order;
         }
 
-        // 抢支付锁：同一订单同一时刻只允许一个线程进
-        String lockKey = PAY_LOCK_PREFIX + orderId;
-        Long ttl = payProperties.getPayLockTtlSeconds();
-        if (ttl == null || ttl <= 0) {
-            ttl = 10L; // yml 没配时兜底，避免 NPE
+        // 状态机：只有「待付款 + 未支付」才能付 → 之后 CAS 成「待接单 + 已支付」
+        if (order.getStatus() != OrderStatus.PENDING_PAYMENT
+                || order.getPayStatus() != PayStatus.UNPAID) {
+            throw new BusinessException(ErrorCode.CONFLICT, "当前订单不可支付");
         }
-        String lockToken = redisIdempotentHelper.tryLock(lockKey, ttl);
-        if (lockToken == null) {
-            // 抢锁失败：同一订单并发支付
-            throw new BusinessException(ErrorCode.CONFLICT, "支付繁忙，请稍后再试");
+
+        // 调用微信支付
+        mockWeChatPayClient.sendPaidNotifyAsync(orderId);
+        log.info("请求微信支付 orderId={} number={}", orderId, order.getNumber());
+        return order;
+    }
+
+    /**
+     * 处理微信支付回调
+     * 验签失败抛错；重复nonce / 已支付 ->  当作成功（渠道重试友好）
+     * @param dto 微信支付回调参数
+     * @return 当前订单
+     */
+    @Transactional
+    public Order handlePayNotify(MockPayNotifyDTO dto) {
+        if (dto == null) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "参数不能为空");
+        }
+
+        String secret = payProperties.getMockSecret();
+        if (!StringUtils.hasText(secret)) {
+            throw new BusinessException(ErrorCode.ERROR, "pay.mock-secret 未配置，无法验签");
+        }
+
+        // 验签
+        boolean ok = HmacPaySignUtil.verify(
+            dto.getOrderNumber(),
+            dto.getAmount(),
+            dto.getTimestamp(),
+            dto.getNonce(),
+            secret,
+            dto.getSign()
+        );
+
+        if (!ok) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "验签失败");
+        }
+
+        /**
+         * 时间窗口（防重放）
+         * 因为渠道回调可能延迟，所以需要一个时间窗口来防止重放
+         * 重放是攻击者重放之前已经处理过的请求，以达到重复支付的目的
+         */
+        Long skew = payProperties.getTimestampSkewSeconds() == null ? 300L : payProperties.getTimestampSkewSeconds();
+        Long now = System.currentTimeMillis() / 1000;
+        // 时间窗口过期
+        if (Math.abs(now - dto.getTimestamp()) > skew) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "时间窗口过期");
+        }
+
+        /**
+         * nonce 去重，SET NX失败说明已经处理过了，直接按成功返回当前订单
+         */
+        Long nonceTtl = payProperties.getNonceTtlSeconds() == null ? 600L : payProperties.getNonceTtlSeconds();
+        // 拼接nonce key
+        String nonceKey = NONCE_KEY_PREFIX + dto.getOrderNumber();
+        // 是否是第一次处理该nonce
+        boolean firstNonce = redisIdempotentHelper.trySetNx(nonceKey, "1", nonceTtl);
+        if (!firstNonce) {
+            log.info("回调nonce重复，幂等返回 orderNumber={}", dto.getOrderNumber());
+            // 查库，拿到原订单（幂等保证，防止并发时查到空订单）
+            Order existed = orderPayPort.findOrderByNumber(dto.getOrderNumber());
+            if (existed == null) {
+                throw new BusinessException(ErrorCode.CONFLICT, "订单不存在");
+            }
+            return existed;
         }
 
         try {
-            // 锁内再查一次：拿到锁前可能已经被人支付了
-            order = requireOrder(orderId);
+            // 查单
+            Order order = orderPayPort.findOrderByNumber(dto.getOrderNumber());
+            if (order == null) {
+                throw new BusinessException(ErrorCode.CONFLICT, "订单不存在");
+            }
+
+            // 核对金额
+            if (order.getAmount() == null || order.getAmount().compareTo(dto.getAmount()) != 0) {
+                throw new BusinessException(ErrorCode.CONFLICT, "支付金额与订单不一致");
+            }
+
+            // 已支付：业务幂等，回成功
             if (isPaid(order)) {
-                log.info("订单{}已支付，直接返回", orderId);
                 return order;
             }
 
-            // 状态机：只有「待付款 + 未支付」才能付 → 之后 CAS 成「待接单 + 已支付」
-            if (order.getStatus() != OrderStatus.PENDING_PAYMENT
-                    || order.getPayStatus() != PayStatus.UNPAID) {
+            // 锁 + CAS
+            return markPaidWithLock(order.getId());
+
+        } catch (RuntimeException e) {
+            // 业务失败时删除nonce，允许渠道用新请求重试
+            // 真项目更常见：验签通过后的失败也留nonce + 记失败流水
+            redisIdempotentHelper.delete(nonceKey);
+            throw e;
+        }
+
+    }
+
+    /**
+     * 锁 + CAS
+     * @param orderId
+     * @return 当前订单
+     */
+    public Order markPaidWithLock (Long orderId) {
+        Order order = requireOrder(orderId);
+        if (isPaid(order)) {
+            return order;
+        }
+
+        String lockKey = PAY_LOCK_PREFIX + orderId;
+        Long ttl = payProperties.getNonceTtlSeconds();
+        if (ttl == null || ttl <= 0) {
+            ttl= 10L;
+        }
+        String lockToken = redisIdempotentHelper.tryLock(lockKey, ttl);
+        if (lockToken == null) {
+            throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "支付处理中，请勿重复回调");
+        }
+
+        try {
+            order = requireOrderById(orderId);
+            if (isPaid(order)) {
+                return order;
+            }
+            if (order.getStatus() != OrderStatus.PENDING_PAYMENT || order.getPayStatus() != PayStatus.UNPAID) {
                 throw new BusinessException(ErrorCode.CONFLICT, "当前订单不可支付");
             }
 
-            // CAS更新支付状态:UPDATE ... WHERE status=待付款 AND pay_status=未支付
-            //  rows=1 成功；rows=0 说明并发下状态已变
             int rows = orderPayPort.casMarkPaid(orderId);
             if (rows == 0) {
-                Order latest = requireOrder(orderId);
+                Order latest = requireOrderById(orderId);
                 if (isPaid(latest)) {
-                    // 并发下状态已变，但已支付，直接返回
-                    log.info("订单{}已支付，直接返回", orderId);
                     return latest;
                 }
-                throw new BusinessException(ErrorCode.CONFLICT, "订单状态已变更，无法支付，请稍后重试");
+                throw new BusinessException(ErrorCode.CONFLICT, "订单状态已变更，支付失败");
             }
-
-            log.info("订单{}已支付", orderId);
-            //返回最新订单（待接单 + 已支付）
-            return requireOrder(orderId);
-
+            log.info("回调支付成功 orderId={}", orderId);
+            return requireOrderById(orderId);
         } finally {
-            // 释放锁
             redisIdempotentHelper.unlock(lockKey, lockToken);
         }
 
+    }
+
+    /**
+     * 查库，返回最新状态的订单
+     * @param orderId
+     * @return 当前订单
+     */
+    private Order requireOrderById(Long orderId) {
+        Order order = orderPayPort.findOrderById(orderId);
+
+        if (order == null) {
+            throw new BusinessException(ErrorCode.CONFLICT, "订单不存在");
+        }
+        return order;
     }
 
     /**
