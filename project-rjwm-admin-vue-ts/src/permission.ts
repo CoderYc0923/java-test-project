@@ -4,14 +4,14 @@ import 'nprogress/nprogress.css'
 import { Message } from 'element-ui'
 import { Route } from 'vue-router'
 import { UserModule } from '@/store/modules/user'
-import Cookies from 'js-cookie'
+import { getToken } from '@/utils/cookies'
 
 NProgress.configure({ 'showSpinner': false })
 
 router.beforeEach(async (to: Route, _: Route, next: any) => {
   NProgress.start()
   // cookie 与内存 token 任一存在即视为已登录（避免仅内存有 token 时被踢回登录）
-  if (Cookies.get('token') || UserModule.token) {
+  if (getToken() || UserModule.token) {
     next()
   } else if (!to.meta.notNeedAuth) {
     next('/login')
