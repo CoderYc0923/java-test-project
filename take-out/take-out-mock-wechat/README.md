@@ -87,7 +87,9 @@ Invoke-RestMethod -Uri http://127.0.0.1:9090/v3/pay/transactions/out-trade-no/OR
 
 若 httpbin 不可达，将 `notify_url` 改为无效地址仍可验证 **native → confirm → query SUCCESS** 本地链路。
 
-## API 速查
+## API 文档
+
+完整请求/响应、错误码、回调签名与时序见 **[API.md](./API.md)**。
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
