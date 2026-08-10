@@ -1,0 +1,7 @@
+server:
+  port: 9090
+
+mock-wechat:
+  merchant-notify-secret: change-me
+  notify-max-retries: 2
+  notify-retry-delay-ms: 500

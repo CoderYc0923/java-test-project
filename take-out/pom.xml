@@ -24,6 +24,7 @@
         <module>take-out-framework</module>
         <module>take-out-admin</module>
         <module>take-out-pay</module>
+        <module>take-out-mock-wechat</module>
     </modules>
 
     <properties>
@@ -63,6 +64,11 @@
             <dependency>
                 <groupId>com.sky</groupId>
                 <artifactId>take-out-pay</artifactId>
+                <version>${take-out.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.sky</groupId>
+                <artifactId>take-out-mock-wechat</artifactId>
                 <version>${take-out.version}</version>
             </dependency>
         </dependencies>
