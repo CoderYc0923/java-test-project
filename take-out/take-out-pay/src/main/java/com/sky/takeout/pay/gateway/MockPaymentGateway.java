@@ -126,19 +126,21 @@ public class MockPaymentGateway {
         }
 
         /**
-         * nonce 去重，SET NX失败说明已经处理过了，直接按成功返回当前订单
+         * nonce 去重：key 必须带「随机 nonce」，不能只用订单号。
+         * 同单并发应靠下面的支付锁 + CAS；nonce 只挡「同一条通知重放」。
          */
         Long nonceTtl = payProperties.getNonceTtlSeconds() == null ? 600L : payProperties.getNonceTtlSeconds();
-        // 拼接nonce key
-        String nonceKey = NONCE_KEY_PREFIX + dto.getOrderNumber();
-        // 是否是第一次处理该nonce
-        boolean firstNonce = redisIdempotentHelper.trySetNx(nonceKey, "1", nonceTtl);
+        String nonceKey = NONCE_KEY_PREFIX + dto.getNonce();
+        boolean firstNonce = redisIdempotentHelper.trySetNx(nonceKey, dto.getOrderNumber(), nonceTtl);
         if (!firstNonce) {
-            log.info("回调nonce重复，幂等返回 orderNumber={}", dto.getOrderNumber());
-            // 查库，拿到原订单（幂等保证，防止并发时查到空订单）
+            log.info("回调 nonce 重复，幂等返回 orderNumber={} nonce={}", dto.getOrderNumber(), dto.getNonce());
             Order existed = orderPayPort.findOrderByNumber(dto.getOrderNumber());
             if (existed == null) {
                 throw new BusinessException(ErrorCode.CONFLICT, "订单不存在");
+            }
+            // 仅当库已是已支付时，才对渠道宣称成功；否则让渠道带新请求/重试更安全
+            if (!isPaid(existed)) {
+                throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "支付处理中，请稍后重试");
             }
             return existed;
         }
@@ -184,9 +186,10 @@ public class MockPaymentGateway {
         }
 
         String lockKey = PAY_LOCK_PREFIX + orderId;
-        Long ttl = payProperties.getNonceTtlSeconds();
+        // 锁 TTL 用 pay-lock-ttl-seconds（短）；勿误用 nonce-ttl（默认 600，宕机后同单会锁太久）
+        Long ttl = payProperties.getPayLockTtlSeconds();
         if (ttl == null || ttl <= 0) {
-            ttl= 10L;
+            ttl = 10L;
         }
         String lockToken = redisIdempotentHelper.tryLock(lockKey, ttl);
         if (lockToken == null) {
