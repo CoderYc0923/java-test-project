@@ -1,230 +1,144 @@
-﻿### Task 4: 鏁版嵁婧愰厤缃笌 EmployeeController锛堝惈 WebMvc 娴嬭瘯锛?
+﻿### Task 4: 鍑虹珯鍥炶皟 + 鎵嬪姩 confirm
 
 **Files:**
-- Modify: `take-out-admin/src/main/resources/application.yml`
-- Create: `take-out-admin/src/main/java/com/sky/takeout/admin/controller/EmployeeController.java`
-- Test: `take-out-admin/src/test/java/com/sky/takeout/admin/controller/EmployeeControllerTest.java`
+- Create: `.../notify/MerchantNotifyPayload.java`锛堜簲瀛楁锛?
+- Create: `.../notify/MerchantNotifyClient.java`
+- Create: `.../api/dto/ConfirmRequest.java`
+- Create: `.../api/dto/ConfirmResponse.java`
+- Modify: `.../service/TradeService.java`锛堝鍔?`confirm`锛?
+- Create: `.../api/ConfirmController.java`
+- Test: `.../service/TradeServiceConfirmTest.java`
 
 **Interfaces:**
-- Consumes: `EmployeeService#getById(Long)`锛沗Employee`锛沗EmployeeVO`锛沗Result`
-- Produces: `GET /api/employees/{id}` 鈫?`Result<EmployeeVO>`锛堟棤 password锛?
+- Consumes: `HmacNotifySignUtil`, `MockWechatProperties`, `TradeStore`
+- Produces:
+  - `MerchantNotifyClient.send(Trade trade)` 鈥?POST `trade.notifyUrl`锛屽け璐ユ寜閰嶇疆閲嶈瘯
+  - `TradeService.confirm(ConfirmRequest)` 鈫?`ConfirmResponse`
+  - `POST /mock/pay/confirm`
 
-- [ ] **Step 1: 鍏堝啓澶辫触鐨?`EmployeeControllerTest`锛堜笉杩炲簱锛?*
+- [ ] **Step 1: 鍐?confirm 鍗曟祴锛圡ockWebServer锛?*
 
 ```java
-package com.sky.takeout.admin.controller;
+package com.sky.takeout.mockwechat.service;
 
-import com.sky.takeout.common.exception.BusinessException;
-import com.sky.takeout.common.result.ErrorCode;
-import com.sky.takeout.framework.web.GlobalExceptionHandler;
-import com.sky.takeout.pojo.entity.Employee;
-import com.sky.takeout.system.service.EmployeeService;
+import java.math.BigDecimal;
+import java.util.concurrent.TimeUnit;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
-import org.springframework.context.annotation.Import;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.client.RestClient;
 
-import java.time.LocalDateTime;
+import com.sky.takeout.mockwechat.config.MockWechatProperties;
+import com.sky.takeout.mockwechat.domain.Trade;
+import com.sky.takeout.mockwechat.domain.TradeState;
+import com.sky.takeout.mockwechat.notify.MerchantNotifyClient;
+import com.sky.takeout.mockwechat.store.TradeStore;
 
-import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import okhttp3.mockwebserver.MockResponse;
+import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.RecordedRequest;
 
-@WebMvcTest(controllers = EmployeeController.class)
-@Import(GlobalExceptionHandler.class)
-class EmployeeControllerTest {
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-    @Autowired
-    private MockMvc mockMvc;
+class TradeServiceConfirmTest {
 
-    @MockitoBean
-    private EmployeeService employeeService;
+    private MockWebServer server;
+    private TradeStore store;
+    private TradeService tradeService;
 
-    @Test
-    void getById_returnsEmployeeWithoutPassword() throws Exception {
-        Employee employee = new Employee();
-        employee.setId(1L);
-        employee.setName("绠＄悊鍛?);
-        employee.setUsername("admin");
-        employee.setPassword("123456");
-        employee.setPhone("13812312312");
-        employee.setSex("1");
-        employee.setIdNumber("110101199001010047");
-        employee.setStatus(1);
-        employee.setCreateTime(LocalDateTime.of(2022, 2, 15, 15, 51, 20));
-        employee.setUpdateTime(LocalDateTime.of(2022, 2, 17, 9, 16, 20));
-        employee.setCreateUser(10L);
-        employee.setUpdateUser(1L);
-        when(employeeService.getById(1L)).thenReturn(employee);
+    @BeforeEach
+    void setUp() throws Exception {
+        server = new MockWebServer();
+        server.start();
+        store = new TradeStore();
+        MockWechatProperties props = new MockWechatProperties();
+        props.setMerchantNotifySecret("test-secret");
+        props.setNotifyMaxRetries(2);
+        props.setNotifyRetryDelayMs(10);
+        MerchantNotifyClient client = new MerchantNotifyClient(RestClient.builder(), props);
+        tradeService = new TradeService(store, client, props);
+    }
 
-        mockMvc.perform(get("/api/employees/1"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(ErrorCode.SUCCESS))
-                .andExpect(jsonPath("$.data.id").value(1))
-                .andExpect(jsonPath("$.data.username").value("admin"))
-                .andExpect(jsonPath("$.data.password").doesNotExist());
+    @AfterEach
+    void tearDown() throws Exception {
+        server.shutdown();
     }
 
     @Test
-    void getById_whenMissing_returnsBusinessError() throws Exception {
-        when(employeeService.getById(99999L))
-                .thenThrow(new BusinessException(ErrorCode.ERROR, "鍛樺伐涓嶅瓨鍦?));
+    void confirm_shouldPostNotifyOnce_andIdempotentSecondConfirm() throws Exception {
+        server.enqueue(new MockResponse().setResponseCode(200));
+        String notifyUrl = server.url("/admin/order/mockPay/notify").toString();
 
-        mockMvc.perform(get("/api/employees/99999"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(ErrorCode.ERROR))
-                .andExpect(jsonPath("$.msg").value("鍛樺伐涓嶅瓨鍦?));
+        Trade trade = new Trade();
+        trade.setOutTradeNo("ORD_C1");
+        trade.setPrepayId("wx_prepay_c1");
+        trade.setAmount(new BigDecimal("6.00"));
+        trade.setNotifyUrl(notifyUrl);
+        trade.setTradeState(TradeState.NOTPAY);
+        trade.setNotifySent(false);
+        store.save(trade);
+
+        tradeService.confirmByOutTradeNo("ORD_C1");
+        RecordedRequest req = server.takeRequest(1, TimeUnit.SECONDS);
+        assertEquals("POST", req.getMethod());
+        assertTrue(req.getBody().readUtf8().contains("\"orderNumber\":\"ORD_C1\""));
+
+        tradeService.confirmByOutTradeNo("ORD_C1");
+        assertEquals(1, server.getRequestCount());
+        assertEquals(TradeState.SUCCESS, store.findByOutTradeNo("ORD_C1").orElseThrow().getTradeState());
     }
 }
 ```
 
-- [ ] **Step 2: 杩愯娴嬭瘯锛岀‘璁ゅ洜缂哄皯 Controller 鑰屽け璐?*
+鎸夊疄闄呮瀯閫犲嚱鏁扮鍚嶅井璋冿紙璁″垝瑕佹眰瀹炵幇鏃朵繚鎸佸彲娴嬶細鏋勯€犳敞鍏?`TradeStore`銆乣MerchantNotifyClient`銆乣MockWechatProperties`锛夈€?
 
-Run:
+- [ ] **Step 2: 璺戞祴纭澶辫触**
 
-```powershell
-.\mvnw.cmd -pl take-out-admin -am test -Dtest=EmployeeControllerTest
+Run: `mvn -pl take-out-mock-wechat -Dtest=TradeServiceConfirmTest test`  
+Expected: FAIL
+
+- [ ] **Step 3: 瀹炵幇 NotifyClient + confirm**
+
+`MerchantNotifyPayload`锛歚orderNumber`銆乣amount`銆乣timestamp`銆乣nonce`銆乣sign`銆?
+
+`MerchantNotifyClient.send`锛?
+
+1. 鐢?`UUID` 鐢熸垚 nonce锛宍timestamp = now/1000`  
+2. `sign = HmacNotifySignUtil.sign(...)`  
+3. `RestClient.post().uri(notifyUrl).body(payload).retrieve()`  
+4. 闈?2xx 鎴栧紓甯革細鏈€澶?`notifyMaxRetries` 娆★紝闂撮殧 `notifyRetryDelayMs`  
+5. 鏈€缁堜粛澶辫触锛氭墦 error 鏃ュ織锛屼笉鎶涚粰 confirm锛堟笭閬撲晶宸?SUCCESS锛夆€斺€?*浣?* `notifySent` 浠呭湪鑷冲皯涓€娆?2xx 鏃剁疆 true锛涜嫢鍏ㄩ儴澶辫触锛宍notifySent=false` 涓旂姸鎬佸凡 SUCCESS锛堢畝鍖栧璐︽ā鍨嬶級銆? 
+
+鏇磋创杩?spec銆屼笉閲嶅閫氱煡銆嶏細鍙湁 2xx 鎵?`notifySent=true`锛涚浜屾 confirm 鑻ュ凡 SUCCESS 涓?`notifySent`锛氱洿鎺ヨ繑鍥烇紱鑻?SUCCESS 浣嗕粠鏈€氱煡鎴愬姛锛屽厑璁稿啀璇曚竴娆?POST锛堝彲閫夊寮猴級銆?*鏈€灏忓疄鐜帮細** SUCCESS 鏃剁疆 `notifySent=true` 浠呭湪 2xx锛涚浜屾 confirm 鑻?SUCCESS 鍒欎笉鍐?POST锛堝嵆浣夸笂娆″け璐ヤ篃涓嶅啀鍒封€斺€擸AGNI锛夈€係pec 鍘熸枃锛氬凡 SUCCESS 涓嶅啀閲嶅 POST銆傛寜 spec锛氱浜屾涓?POST銆?
+
+`confirmByOutTradeNo`锛?
+
+```text
+lock/鍚屾鍚屼竴 outTradeNo
+鎵句笉鍒?鈫?404
+SUCCESS 鈫?return锛堜笉 POST锛?
+notifyUrl blank 鈫?400
+state = SUCCESS, paidAt = now
+璋冪敤 notifyClient.send
+鑻?2xx 鈫?notifySent = true
+save
 ```
 
-Expected: FAIL锛堟壘涓嶅埌 `EmployeeController` 鎴栦笂涓嬫枃鏃犳硶鍔犺浇璇ョ被锛夈€?
+`ConfirmController`锛歚POST /mock/pay/confirm`锛宐ody `{ "out_trade_no": "..." }`銆?
 
-- [ ] **Step 3: 瀹炵幇 `EmployeeController.java`**
+- [ ] **Step 4: 璺戞祴閫氳繃**
 
-```java
-package com.sky.takeout.admin.controller;
+Run: `mvn -pl take-out-mock-wechat -Dtest=TradeServiceConfirmTest,TransactionControllerTest,HmacNotifySignUtilTest test`  
+Expected: 鍏ㄩ儴 PASS
 
-import com.sky.takeout.common.result.Result;
-import com.sky.takeout.pojo.entity.Employee;
-import com.sky.takeout.pojo.vo.EmployeeVO;
-import com.sky.takeout.system.service.EmployeeService;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
-@RestController
-@RequestMapping("/api/employees")
-public class EmployeeController {
-
-    private final EmployeeService employeeService;
-
-    public EmployeeController(EmployeeService employeeService) {
-        this.employeeService = employeeService;
-    }
-
-    @GetMapping("/{id}")
-    public Result<EmployeeVO> getById(@PathVariable Long id) {
-        Employee employee = employeeService.getById(id);
-        return Result.success(toVO(employee));
-    }
-
-    private static EmployeeVO toVO(Employee employee) {
-        EmployeeVO vo = new EmployeeVO();
-        vo.setId(employee.getId());
-        vo.setName(employee.getName());
-        vo.setUsername(employee.getUsername());
-        vo.setPhone(employee.getPhone());
-        vo.setSex(employee.getSex());
-        vo.setIdNumber(employee.getIdNumber());
-        vo.setStatus(employee.getStatus());
-        vo.setCreateTime(employee.getCreateTime());
-        vo.setUpdateTime(employee.getUpdateTime());
-        vo.setCreateUser(employee.getCreateUser());
-        vo.setUpdateUser(employee.getUpdateUser());
-        return vo;
-    }
-}
-```
-
-- [ ] **Step 4: 鏇存柊 `application.yml`**
-
-瀹屾暣鏂囦欢鍐呭锛?
-
-```yaml
-spring:
-  application:
-    name: take-out-admin
-  datasource:
-    url: jdbc:mysql://127.0.0.1:3307/take_out?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
-    username: takeout_rw
-    password: TakeoutRw@123
-    driver-class-name: com.mysql.cj.jdbc.Driver
-
-mybatis-plus:
-  configuration:
-    map-underscore-to-camel-case: true
-  global-config:
-    db-config:
-      id-type: auto
-```
-
-- [ ] **Step 5: 鍐嶈窇 `EmployeeControllerTest`锛屾湡鏈涢€氳繃**
-
-Run:
-
-```powershell
-.\mvnw.cmd -pl take-out-admin -am test -Dtest=EmployeeControllerTest
-```
-
-Expected: Tests run: 2, Failures: 0, Errors: 0銆?
-
-- [ ] **Step 6: 纭繚 Docker MySQL 宸插惎鍔ㄥ悗璺?admin 鍏ㄩ噺娴嬭瘯**
-
-Run:
-
-```powershell
-docker compose ps
-.\mvnw.cmd clean test -pl take-out-admin -am
-```
-
-Expected: `take-out-mysql` 涓?healthy锛涘叏閮ㄦ祴璇?PASS锛堝惈鏃㈡湁 `DemoControllerTest` / `contextLoads`锛夈€?
-
-- [ ] **Step 7: 鎵嬪伐楠岃瘉锛堝彲閫変絾鎺ㄨ崘锛?*
-
-```powershell
-.\mvnw.cmd spring-boot:run -pl take-out-admin
-```
-
-鍙﹀紑缁堢锛?
-
-```powershell
-curl http://localhost:8080/api/employees/1
-curl http://localhost:8080/api/employees/99999
-```
-
-Expected: 鍓嶈€?JSON 鍚?`"username":"admin"` 涓旀棤 `password`锛涘悗鑰?`code` 涓洪敊璇爜銆乣msg` 涓恒€屽憳宸ヤ笉瀛樺湪銆嶃€?
-
-- [ ] **Step 8: Commit锛堜粎褰撶敤鎴疯姹傦級**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add take-out-admin/src/main/resources/application.yml take-out-admin/src/main/java/com/sky/takeout/admin/controller/EmployeeController.java take-out-admin/src/test/java/com/sky/takeout/admin/controller/EmployeeControllerTest.java
-git commit -m "feat: add employee read API with MyBatis-Plus datasource"
+git add take-out-mock-wechat
+git commit -m "feat(mock-wechat): add manual confirm and merchant HTTP notify"
 ```
 
 ---
-
-## Spec Coverage Checklist
-
-| Spec 瑕佹眰 | 瀵瑰簲 Task |
-|-----------|-----------|
-| MyBatis-Plus Boot4 starter 3.5.17 | Task 1 |
-| Lombok | Task 1鈥? |
-| Employee + EmployeeVO锛堟棤 password锛?| Task 2 |
-| Mapper / Service / 鏌ユ棤鎶?BusinessException | Task 3 |
-| MapperScan 鍦?framework | Task 3 |
-| admin yml 鏁版嵁婧?| Task 4 |
-| GET /api/employees/{id} | Task 4 |
-| EmployeeControllerTest mock銆佷笉杩炲簱 | Task 4 |
-| 鍏ㄩ噺娴嬭瘯绾﹀畾闇€ Docker | Task 4 Step 6 |
-| 闈炵洰鏍囷紙鍒嗛〉/CRUD/閴存潈绛夛級 | 鏈垪鍏ヤ换浣?Task |
-
----
-
-## Self-Review Notes
-
-- 鏃?TBD/鍗犱綅姝ラ锛涚鍚嶇粺涓€涓?`Employee getById(Long id)`锛孋ontroller 鍐呮墜宸ユ槧灏?VO銆?
-- `@MapperScan` 浣跨敤 `com.sky.takeout.system.mapper`锛堟瘮 spec 涓殑 `**` 鏇寸ǔ濡ワ紝璇箟绛変环浜庡綋鍓嶈寖鍥达級銆?
-- `pojo` 浠呬緷璧?`mybatis-plus-annotation`锛岄伩鍏嶆妸 starter 鎷夎繘妯″瀷灞傘€?
+

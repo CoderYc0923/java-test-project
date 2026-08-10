@@ -1,0 +1,350 @@
+﻿diff --git a/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/MockWechatException.java b/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/MockWechatException.java
+new file mode 100644
+index 0000000..5ec202c
+--- /dev/null
++++ b/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/MockWechatException.java
+@@ -0,0 +1,23 @@
++package com.sky.takeout.mockwechat.api;
++
++import org.springframework.http.HttpStatus;
++
++public class MockWechatException extends RuntimeException {
++
++    private final HttpStatus status;
++    private final String code;
++
++    public MockWechatException(HttpStatus status, String code, String message) {
++        super(message);
++        this.status = status;
++        this.code = code;
++    }
++
++    public HttpStatus getStatus() {
++        return status;
++    }
++
++    public String getCode() {
++        return code;
++    }
++}
+diff --git a/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/MockWechatExceptionHandler.java b/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/MockWechatExceptionHandler.java
+new file mode 100644
+index 0000000..e793881
+--- /dev/null
++++ b/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/MockWechatExceptionHandler.java
+@@ -0,0 +1,17 @@
++package com.sky.takeout.mockwechat.api;
++
++import org.springframework.http.ResponseEntity;
++import org.springframework.web.bind.annotation.ExceptionHandler;
++import org.springframework.web.bind.annotation.RestControllerAdvice;
++
++import com.sky.takeout.mockwechat.api.dto.ErrorBody;
++
++@RestControllerAdvice
++public class MockWechatExceptionHandler {
++
++    @ExceptionHandler(MockWechatException.class)
++    public ResponseEntity<ErrorBody> handle(MockWechatException ex) {
++        return ResponseEntity.status(ex.getStatus())
++                .body(new ErrorBody(ex.getCode(), ex.getMessage()));
++    }
++}
+diff --git a/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/TransactionController.java b/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/TransactionController.java
+new file mode 100644
+index 0000000..b918c3c
+--- /dev/null
++++ b/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/TransactionController.java
+@@ -0,0 +1,37 @@
++package com.sky.takeout.mockwechat.api;
++
++import org.springframework.validation.annotation.Validated;
++import org.springframework.web.bind.annotation.GetMapping;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.PostMapping;
++import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.RequestMapping;
++import org.springframework.web.bind.annotation.RestController;
++
++import com.sky.takeout.mockwechat.api.dto.NativePayRequest;
++import com.sky.takeout.mockwechat.api.dto.TransactionResponse;
++import com.sky.takeout.mockwechat.service.TradeService;
++
++import jakarta.validation.Valid;
++
++@RestController
++@RequestMapping("/v3/pay/transactions")
++@Validated
++public class TransactionController {
++
++    private final TradeService tradeService;
++
++    public TransactionController(TradeService tradeService) {
++        this.tradeService = tradeService;
++    }
++
++    @PostMapping("/native")
++    public TransactionResponse nativePay(@Valid @RequestBody NativePayRequest request) {
++        return tradeService.createNative(request);
++    }
++
++    @GetMapping("/out-trade-no/{out_trade_no}")
++    public TransactionResponse queryByOutTradeNo(@PathVariable("out_trade_no") String outTradeNo) {
++        return tradeService.queryByOutTradeNo(outTradeNo);
++    }
++}
+diff --git a/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/dto/ErrorBody.java b/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/dto/ErrorBody.java
+new file mode 100644
+index 0000000..af8e09f
+--- /dev/null
++++ b/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/dto/ErrorBody.java
+@@ -0,0 +1,13 @@
++package com.sky.takeout.mockwechat.api.dto;
++
++import lombok.AllArgsConstructor;
++import lombok.Data;
++import lombok.NoArgsConstructor;
++
++@Data
++@NoArgsConstructor
++@AllArgsConstructor
++public class ErrorBody {
++    private String code;
++    private String message;
++}
+diff --git a/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/dto/NativePayRequest.java b/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/dto/NativePayRequest.java
+new file mode 100644
+index 0000000..8ec303f
+--- /dev/null
++++ b/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/dto/NativePayRequest.java
+@@ -0,0 +1,27 @@
++package com.sky.takeout.mockwechat.api.dto;
++
++import java.math.BigDecimal;
++
++import com.fasterxml.jackson.annotation.JsonProperty;
++
++import jakarta.validation.constraints.NotBlank;
++import jakarta.validation.constraints.NotNull;
++import lombok.Data;
++
++@Data
++public class NativePayRequest {
++
++    @NotBlank
++    @JsonProperty("out_trade_no")
++    private String outTradeNo;
++
++    @NotBlank
++    private String description;
++
++    @NotBlank
++    @JsonProperty("notify_url")
++    private String notifyUrl;
++
++    @NotNull
++    private BigDecimal amount;
++}
+diff --git a/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/dto/TransactionResponse.java b/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/dto/TransactionResponse.java
+new file mode 100644
+index 0000000..5de038d
+--- /dev/null
++++ b/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/api/dto/TransactionResponse.java
+@@ -0,0 +1,28 @@
++package com.sky.takeout.mockwechat.api.dto;
++
++import java.math.BigDecimal;
++
++import com.fasterxml.jackson.annotation.JsonProperty;
++
++import lombok.Builder;
++import lombok.Data;
++
++@Data
++@Builder
++public class TransactionResponse {
++
++    @JsonProperty("out_trade_no")
++    private String outTradeNo;
++
++    @JsonProperty("prepay_id")
++    private String prepayId;
++
++    private String description;
++
++    private BigDecimal amount;
++
++    private String currency;
++
++    @JsonProperty("trade_state")
++    private String tradeState;
++}
+diff --git a/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/service/TradeService.java b/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/service/TradeService.java
+new file mode 100644
+index 0000000..e93e782
+--- /dev/null
++++ b/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/service/TradeService.java
+@@ -0,0 +1,72 @@
++package com.sky.takeout.mockwechat.service;
++
++import java.time.Instant;
++import java.util.UUID;
++
++import org.springframework.http.HttpStatus;
++import org.springframework.stereotype.Service;
++
++import com.sky.takeout.mockwechat.api.MockWechatException;
++import com.sky.takeout.mockwechat.api.dto.NativePayRequest;
++import com.sky.takeout.mockwechat.api.dto.TransactionResponse;
++import com.sky.takeout.mockwechat.domain.Trade;
++import com.sky.takeout.mockwechat.domain.TradeState;
++import com.sky.takeout.mockwechat.store.TradeStore;
++
++@Service
++public class TradeService {
++
++    private final TradeStore tradeStore;
++
++    public TradeService(TradeStore tradeStore) {
++        this.tradeStore = tradeStore;
++    }
++
++    public TransactionResponse createNative(NativePayRequest request) {
++        return tradeStore.findByOutTradeNo(request.getOutTradeNo())
++                .map(existing -> {
++                    if (existing.getTradeState() == TradeState.SUCCESS) {
++                        throw new MockWechatException(
++                                HttpStatus.CONFLICT,
++                                "ORDER_PAID",
++                                "out_trade_no already paid");
++                    }
++                    // NOTPAY: idempotent return
++                    return toResponse(existing);
++                })
++                .orElseGet(() -> {
++                    Trade trade = new Trade();
++                    trade.setOutTradeNo(request.getOutTradeNo());
++                    trade.setPrepayId("wx_prepay_" + UUID.randomUUID());
++                    trade.setDescription(request.getDescription());
++                    trade.setNotifyUrl(request.getNotifyUrl());
++                    trade.setAmount(request.getAmount());
++                    trade.setCurrency("CNY");
++                    trade.setTradeState(TradeState.NOTPAY);
++                    trade.setCreatedAt(Instant.now());
++                    trade.setNotifySent(false);
++                    tradeStore.save(trade);
++                    return toResponse(trade);
++                });
++    }
++
++    public TransactionResponse queryByOutTradeNo(String outTradeNo) {
++        Trade trade = tradeStore.findByOutTradeNo(outTradeNo)
++                .orElseThrow(() -> new MockWechatException(
++                        HttpStatus.NOT_FOUND,
++                        "ORDER_NOT_FOUND",
++                        "out_trade_no not found"));
++        return toResponse(trade);
++    }
++
++    private static TransactionResponse toResponse(Trade trade) {
++        return TransactionResponse.builder()
++                .outTradeNo(trade.getOutTradeNo())
++                .prepayId(trade.getPrepayId())
++                .description(trade.getDescription())
++                .amount(trade.getAmount())
++                .currency(trade.getCurrency())
++                .tradeState(trade.getTradeState().name())
++                .build();
++    }
++}
+diff --git a/take-out/take-out-mock-wechat/src/test/java/com/sky/takeout/mockwechat/api/TransactionControllerTest.java b/take-out/take-out-mock-wechat/src/test/java/com/sky/takeout/mockwechat/api/TransactionControllerTest.java
+new file mode 100644
+index 0000000..234fcda
+--- /dev/null
++++ b/take-out/take-out-mock-wechat/src/test/java/com/sky/takeout/mockwechat/api/TransactionControllerTest.java
+@@ -0,0 +1,85 @@
++package com.sky.takeout.mockwechat.api;
++
++import org.junit.jupiter.api.Test;
++import org.springframework.beans.factory.annotation.Autowired;
++import org.springframework.boot.test.context.SpringBootTest;
++import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
++import org.springframework.http.MediaType;
++import org.springframework.test.web.servlet.MockMvc;
++
++import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
++import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
++import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
++import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
++
++@SpringBootTest
++@AutoConfigureMockMvc
++class TransactionControllerTest {
++
++    @Autowired
++    private MockMvc mockMvc;
++
++    @Test
++    void nativePay_thenQuery_shouldReturnNotPay() throws Exception {
++        String body = """
++                {
++                  "out_trade_no": "ORD_TEST_001",
++                  "description": "娴嬭瘯",
++                  "notify_url": "http://127.0.0.1:8080/admin/order/mockPay/notify",
++                  "amount": 62.00
++                }
++                """;
++
++        mockMvc.perform(post("/v3/pay/transactions/native")
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content(body))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.out_trade_no").value("ORD_TEST_001"))
++                .andExpect(jsonPath("$.trade_state").value("NOTPAY"))
++                .andExpect(jsonPath("$.prepay_id").isNotEmpty());
++
++        mockMvc.perform(get("/v3/pay/transactions/out-trade-no/ORD_TEST_001"))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.trade_state").value("NOTPAY"));
++    }
++
++    @Test
++    void query_missing_should404() throws Exception {
++        mockMvc.perform(get("/v3/pay/transactions/out-trade-no/NO_SUCH"))
++                .andExpect(status().isNotFound());
++    }
++
++    @Test
++    void nativePay_sameOutTradeNo_shouldBeIdempotent() throws Exception {
++        String body = """
++                {
++                  "out_trade_no": "ORD_IDEM_001",
++                  "description": "骞傜瓑娴嬭瘯",
++                  "notify_url": "http://127.0.0.1:8080/admin/order/mockPay/notify",
++                  "amount": 10.00
++                }
++                """;
++
++        String first = mockMvc.perform(post("/v3/pay/transactions/native")
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content(body))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.prepay_id").isNotEmpty())
++                .andReturn()
++                .getResponse()
++                .getContentAsString();
++
++        String second = mockMvc.perform(post("/v3/pay/transactions/native")
++                        .contentType(MediaType.APPLICATION_JSON)
++                        .content(body))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.out_trade_no").value("ORD_IDEM_001"))
++                .andExpect(jsonPath("$.trade_state").value("NOTPAY"))
++                .andReturn()
++                .getResponse()
++                .getContentAsString();
++
++        // same prepay_id on repeat native for same out_trade_no
++        org.junit.jupiter.api.Assertions.assertEquals(first, second);
++    }
++}

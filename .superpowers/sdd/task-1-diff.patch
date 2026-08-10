@@ -1,0 +1,131 @@
+﻿diff --git a/take-out/pom.xml b/take-out/pom.xml
+index 330be05..a0853ba 100644
+--- a/take-out/pom.xml
++++ b/take-out/pom.xml
+@@ -17,20 +17,21 @@
+     <packaging>pom</packaging>
+     <name>take-out</name>
+ 
+     <modules>
+         <module>take-out-common</module>
+         <module>take-out-pojo</module>
+         <module>take-out-system</module>
+         <module>take-out-framework</module>
+         <module>take-out-admin</module>
+         <module>take-out-pay</module>
++        <module>take-out-mock-wechat</module>
+     </modules>
+ 
+     <properties>
+         <java.version>17</java.version>
+         <take-out.version>0.0.1-SNAPSHOT</take-out.version>
+     </properties>
+ 
+     <dependencyManagement>
+         <dependencies>
+             <dependency>
+@@ -58,13 +59,18 @@
+             <dependency>
+                 <groupId>com.sky</groupId>
+                 <artifactId>take-out-framework</artifactId>
+                 <version>${take-out.version}</version>
+             </dependency>
+             <dependency>
+                 <groupId>com.sky</groupId>
+                 <artifactId>take-out-pay</artifactId>
+                 <version>${take-out.version}</version>
+             </dependency>
++            <dependency>
++                <groupId>com.sky</groupId>
++                <artifactId>take-out-mock-wechat</artifactId>
++                <version>${take-out.version}</version>
++            </dependency>
+         </dependencies>
+     </dependencyManagement>
+ </project>
+diff --git a/take-out/take-out-mock-wechat/pom.xml b/take-out/take-out-mock-wechat/pom.xml
+new file mode 100644
+index 0000000..631693b
+--- /dev/null
++++ b/take-out/take-out-mock-wechat/pom.xml
+@@ -0,0 +1,48 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<project xmlns="http://maven.apache.org/POM/4.0.0"
++         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
++         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
++    <modelVersion>4.0.0</modelVersion>
++    <parent>
++        <groupId>com.sky</groupId>
++        <artifactId>take-out</artifactId>
++        <version>0.0.1-SNAPSHOT</version>
++    </parent>
++    <artifactId>take-out-mock-wechat</artifactId>
++    <name>take-out-mock-wechat</name>
++    <description>鍋囧井淇?V3 娌欑锛堟暀瀛︼級</description>
++    <dependencies>
++        <dependency>
++            <groupId>org.springframework.boot</groupId>
++            <artifactId>spring-boot-starter-webmvc</artifactId>
++        </dependency>
++        <dependency>
++            <groupId>org.springframework.boot</groupId>
++            <artifactId>spring-boot-starter-validation</artifactId>
++        </dependency>
++        <dependency>
++            <groupId>org.projectlombok</groupId>
++            <artifactId>lombok</artifactId>
++            <optional>true</optional>
++        </dependency>
++        <dependency>
++            <groupId>org.springframework.boot</groupId>
++            <artifactId>spring-boot-starter-webmvc-test</artifactId>
++            <scope>test</scope>
++        </dependency>
++        <dependency>
++            <groupId>com.squareup.okhttp3</groupId>
++            <artifactId>mockwebserver</artifactId>
++            <version>4.12.0</version>
++            <scope>test</scope>
++        </dependency>
++    </dependencies>
++    <build>
++        <plugins>
++            <plugin>
++                <groupId>org.springframework.boot</groupId>
++                <artifactId>spring-boot-maven-plugin</artifactId>
++            </plugin>
++        </plugins>
++    </build>
++</project>
+diff --git a/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/MockWechatApplication.java b/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/MockWechatApplication.java
+new file mode 100644
+index 0000000..bbcf7e4
+--- /dev/null
++++ b/take-out/take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/MockWechatApplication.java
+@@ -0,0 +1,13 @@
++package com.sky.takeout.mockwechat;
++
++import org.springframework.boot.SpringApplication;
++import org.springframework.boot.autoconfigure.SpringBootApplication;
++import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
++
++@SpringBootApplication
++@ConfigurationPropertiesScan
++public class MockWechatApplication {
++    public static void main(String[] args) {
++        SpringApplication.run(MockWechatApplication.class, args);
++    }
++}
+diff --git a/take-out/take-out-mock-wechat/src/main/resources/application.yml b/take-out/take-out-mock-wechat/src/main/resources/application.yml
+new file mode 100644
+index 0000000..abede67
+--- /dev/null
++++ b/take-out/take-out-mock-wechat/src/main/resources/application.yml
+@@ -0,0 +1,7 @@
++server:
++  port: 9090
++
++mock-wechat:
++  merchant-notify-secret: change-me
++  notify-max-retries: 2
++  notify-retry-delay-ms: 500

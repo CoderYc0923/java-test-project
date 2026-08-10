@@ -1,117 +1,129 @@
-﻿### Task 3: Mapper銆丼ervice 涓?MapperScan
+﻿### Task 3: 缁熶竴涓嬪崟 + 鏌ュ崟 API
 
 **Files:**
-- Create: `take-out-system/src/main/java/com/sky/takeout/system/mapper/EmployeeMapper.java`
-- Create: `take-out-system/src/main/java/com/sky/takeout/system/service/EmployeeService.java`
-- Create: `take-out-system/src/main/java/com/sky/takeout/system/service/impl/EmployeeServiceImpl.java`
-- Create: `take-out-framework/src/main/java/com/sky/takeout/framework/config/MybatisPlusConfig.java`
+- Create: `.../api/dto/NativePayRequest.java`
+- Create: `.../api/dto/TransactionResponse.java`
+- Create: `.../api/dto/ErrorBody.java`
+- Create: `.../api/MockWechatException.java`锛堝彲閫夋惡甯?HTTP 鐘舵€侊級
+- Create: `.../api/MockWechatExceptionHandler.java`
+- Create: `.../service/TradeService.java`锛坈reate + query锛?
+- Create: `.../api/TransactionController.java`
+- Test: `.../api/TransactionControllerTest.java`锛坄@SpringBootTest` + `MockMvc`锛?
 
 **Interfaces:**
-- Consumes: `Employee`锛沗BaseMapper`锛沗BusinessException` / `ErrorCode`
+- Consumes: `TradeStore`, `Trade`
 - Produces:
-  - `EmployeeMapper extends BaseMapper<Employee>`
-  - `EmployeeService#Employee getById(Long id)` 鈥?涓嶅瓨鍦ㄦ椂鎶?`BusinessException(ErrorCode.ERROR, "鍛樺伐涓嶅瓨鍦?)`
-  - `MybatisPlusConfig` 甯?`@MapperScan("com.sky.takeout.system.mapper")`
+  - `TradeService.createNative(NativePayRequest)` 鈫?`TransactionResponse`
+  - `TradeService.queryByOutTradeNo(String)` 鈫?`TransactionResponse`
+  - `POST /v3/pay/transactions/native`
+  - `GET /v3/pay/transactions/out-trade-no/{out_trade_no}`
 
-- [ ] **Step 1: 鍒涘缓 `EmployeeMapper.java`**
-
-```java
-package com.sky.takeout.system.mapper;
-
-import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.sky.takeout.pojo.entity.Employee;
-import org.apache.ibatis.annotations.Mapper;
-
-@Mapper
-public interface EmployeeMapper extends BaseMapper<Employee> {
-}
-```
-
-- [ ] **Step 2: 鍒涘缓 `EmployeeService.java`**
+- [ ] **Step 1: 鍐?MockMvc 澶辫触鐢ㄤ緥锛堟帴鍙ｆ湭瀹炵幇锛?*
 
 ```java
-package com.sky.takeout.system.service;
+package com.sky.takeout.mockwechat.api;
 
-import com.sky.takeout.pojo.entity.Employee;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 
-public interface EmployeeService {
-    Employee getById(Long id);
-}
-```
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-- [ ] **Step 3: 鍒涘缓 `EmployeeServiceImpl.java`**
+@SpringBootTest
+@AutoConfigureMockMvc
+class TransactionControllerTest {
 
-```java
-package com.sky.takeout.system.service.impl;
+    @Autowired
+    private MockMvc mockMvc;
 
-import com.sky.takeout.common.exception.BusinessException;
-import com.sky.takeout.common.result.ErrorCode;
-import com.sky.takeout.pojo.entity.Employee;
-import com.sky.takeout.system.mapper.EmployeeMapper;
-import com.sky.takeout.system.service.EmployeeService;
-import org.springframework.stereotype.Service;
+    @Test
+    void nativePay_thenQuery_shouldReturnNotPay() throws Exception {
+        String body = """
+                {
+                  "out_trade_no": "ORD_TEST_001",
+                  "description": "娴嬭瘯",
+                  "notify_url": "http://127.0.0.1:8080/admin/order/mockPay/notify",
+                  "amount": 62.00
+                }
+                """;
 
-@Service
-public class EmployeeServiceImpl implements EmployeeService {
+        mockMvc.perform(post("/v3/pay/transactions/native")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.out_trade_no").value("ORD_TEST_001"))
+                .andExpect(jsonPath("$.trade_state").value("NOTPAY"))
+                .andExpect(jsonPath("$.prepay_id").isNotEmpty());
 
-    private final EmployeeMapper employeeMapper;
-
-    public EmployeeServiceImpl(EmployeeMapper employeeMapper) {
-        this.employeeMapper = employeeMapper;
+        mockMvc.perform(get("/v3/pay/transactions/out-trade-no/ORD_TEST_001"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.trade_state").value("NOTPAY"));
     }
 
-    @Override
-    public Employee getById(Long id) {
-        Employee employee = employeeMapper.selectById(id);
-        if (employee == null) {
-            throw new BusinessException(ErrorCode.ERROR, "鍛樺伐涓嶅瓨鍦?);
-        }
-        return employee;
+    @Test
+    void query_missing_should404() throws Exception {
+        mockMvc.perform(get("/v3/pay/transactions/out-trade-no/NO_SUCH"))
+                .andExpect(status().isNotFound());
     }
 }
 ```
 
-璇存槑锛歚system` 妯″潡闇€鑳界紪璇戝埌 Spring 鐨?`@Service`銆傝嫢褰撳墠 `take-out-system/pom.xml` 灏氭棤 spring-context锛岄€氳繃 `mybatis-plus-spring-boot4-starter` 浼犻€掍緷璧栭€氬父宸茶冻澶燂紱鑻ョ紪璇戞姤鎵句笉鍒?`@Service`锛屽湪 system 鐨?pom 澧炲姞锛?
+娉ㄦ剰锛氳嫢 Boot 4 鐨?`@AutoConfigureMockMvc` 鍖呭悕涓嶅悓锛屼互椤圭洰鍐?`EmployeeControllerTest` / 渚濊禆涓哄噯璋冩暣 import锛坄org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc` 鎴?`org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc`锛夈€?
 
-```xml
-<dependency>
-    <groupId>org.springframework</groupId>
-    <artifactId>spring-context</artifactId>
-</dependency>
-```
+- [ ] **Step 2: 璺戞祴纭澶辫触**
 
-- [ ] **Step 4: 鍒涘缓 `MybatisPlusConfig.java`**
+Run: `mvn -pl take-out-mock-wechat -Dtest=TransactionControllerTest test`  
+Expected: FAIL锛?04 mapping锛?
+
+- [ ] **Step 3: 瀹炵幇 DTO銆佸紓甯搞€丼ervice銆丆ontroller**
+
+璇锋眰/鍝嶅簲瀛楁浣跨敤 Jackson 榛樿椹煎嘲锛汮SON 鍙敤 `@JsonProperty("out_trade_no")` 鑻ヨ鍧氭寔铔囧舰锛?*鎺ㄨ崘铔囧舰瀵归綈 V3**锛夛細
 
 ```java
-package com.sky.takeout.framework.config;
+// NativePayRequest 鍏抽敭瀛楁绀轰緥
+@NotBlank
+@JsonProperty("out_trade_no")
+private String outTradeNo;
 
-import org.mybatis.spring.annotation.MapperScan;
-import org.springframework.context.annotation.Configuration;
+@JsonProperty("notify_url")
+@NotBlank
+private String notifyUrl;
 
-@Configuration
-@MapperScan("com.sky.takeout.system.mapper")
-public class MybatisPlusConfig {
-}
+@NotNull
+private BigDecimal amount;
 ```
 
-璇存槑锛氬寘璺緞鐢ㄦ槑纭寘鍚嶏紙涓嶇敤 `**`锛夛紝鍚庣画涓氬姟妯″潡鍐嶅線 `@MapperScan` 鐨?`value` 鏁扮粍杩藉姞銆?
+鍝嶅簲鍚屾牱 `@JsonProperty("prepay_id")`銆乣trade_state`銆乣out_trade_no`銆?
 
-- [ ] **Step 5: 缂栬瘧 system + framework**
+`TradeService.createNative` 閫昏緫锛?
 
-Run:
+1. 鑻ュ凡瀛樺湪涓?`SUCCESS` 鈫?throw 409  
+2. 鑻ュ凡瀛樺湪涓?`NOTPAY` 鈫?杩斿洖鍘熶氦鏄撳搷搴旓紙骞傜瓑锛? 
+3. 鍚﹀垯 `prepayId = "wx_prepay_" + UUID`锛岀姸鎬?`NOTPAY`锛宍currency` 榛樿 `CNY`锛宍save`
 
-```powershell
-.\mvnw.cmd -q -pl take-out-framework -am compile
-```
+`queryByOutTradeNo`锛氭壘涓嶅埌 鈫?404 寮傚父
 
-Expected: BUILD SUCCESS銆?
+`MockWechatExceptionHandler`锛氭槧灏勫埌 `ErrorBody(code, message)` + 瀵瑰簲 HTTP 鐘舵€併€?
 
-- [ ] **Step 6: Commit锛堜粎褰撶敤鎴疯姹傦級**
+- [ ] **Step 4: 璺戞祴閫氳繃**
+
+Run: `mvn -pl take-out-mock-wechat -Dtest=TransactionControllerTest test`  
+Expected: PASS
+
+鍙︽祴锛氶噸澶?native 鍚屼竴 `out_trade_no` 杩斿洖鍚屼竴 `prepay_id`锛堝彲鍔犳柇瑷€鎴栨墜宸?Postman锛夈€?
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add take-out-system/src/main/java/com/sky/takeout/system/mapper/EmployeeMapper.java take-out-system/src/main/java/com/sky/takeout/system/service/EmployeeService.java take-out-system/src/main/java/com/sky/takeout/system/service/impl/EmployeeServiceImpl.java take-out-framework/src/main/java/com/sky/takeout/framework/config/MybatisPlusConfig.java take-out-system/pom.xml
-git commit -m "feat: add EmployeeMapper, EmployeeService, and MapperScan"
+git add take-out-mock-wechat
+git commit -m "feat(mock-wechat): add native pay and query APIs"
 ```
 
 ---
-
+

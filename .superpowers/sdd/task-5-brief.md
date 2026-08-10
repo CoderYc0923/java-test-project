@@ -1,142 +1,43 @@
-### Task 5: admin 启动模块迁移与 `/api/hello`
+﻿### Task 5: 妯″潡 README + 鎵嬪伐楠屾敹
 
 **Files:**
-- Create: `take-out-admin/src/main/java/com/sky/takeout/admin/TakeOutAdminApplication.java`
-- Create: `take-out-admin/src/main/java/com/sky/takeout/admin/controller/DemoController.java`
-- Create: `take-out-admin/src/main/resources/application.yml`
-- Create: `take-out-admin/src/test/java/com/sky/takeout/admin/TakeOutAdminApplicationTests.java`
-- Create: `take-out-admin/src/test/java/com/sky/takeout/admin/controller/DemoControllerTest.java`
-- Delete: `src/main/java/com/sky/take_out/**`
-- Delete: `src/main/resources/application.properties`
-- Delete: `src/test/java/com/sky/take_out/**`
-- Delete: 根目录空余 `src/` 树
+- Create: `take-out-mock-wechat/README.md`
 
-**Interfaces:**
-- Consumes: `Result.success(T)`；framework 组件需被扫描
-- Produces: `GET /api/hello` → JSON `{"code":1,"msg":"success","data":"Hello, World!"}`
+**Interfaces:** 鏃犱唬鐮佹帴鍙ｏ紱浜у嚭鍙窡鍋氱殑楠屾敹姝ラ銆?
 
-- [ ] **Step 1: 写 `DemoControllerTest`（先失败）**
+- [ ] **Step 1: 鍐?README**
 
-```java
-package com.sky.takeout.admin.controller;
+鍐呭椤诲寘鍚細
 
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.web.servlet.MockMvc;
+1. 鍚姩锛歚mvn -pl take-out-mock-wechat spring-boot:run`  
+2. `merchant-notify-secret` 椤讳笌澶栧崠 `pay.mock-secret` 涓€鑷? 
+3. Postman 涓夋锛歯ative 鈫?query 鈫?confirm  
+4. `notify_url` 绀轰緥锛歚http://127.0.0.1:8080/admin/order/mockPay/notify`锛堥渶绠＄悊绔凡鍚姩涓旂櫧鍚嶅崟鏀捐锛? 
+5. 璇存槑锛?*涓嶆敼 take-out-pay**锛涗綔鑰呭悗缁嚜琛屾妸 Client 鏀逛负璋冩湰鏈嶅姟  
 
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-@SpringBootTest
-@AutoConfigureMockMvc
-class DemoControllerTest {
-
-    @Autowired
-    private MockMvc mockMvc;
-
-    @Test
-    void hello_returnsUnifiedResult() throws Exception {
-        mockMvc.perform(get("/api/hello"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(1))
-                .andExpect(jsonPath("$.data").value("Hello, World!"));
-    }
-}
-```
-
-- [ ] **Step 2: 实现启动类**
-
-```java
-package com.sky.takeout.admin;
-
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-
-@SpringBootApplication(scanBasePackages = "com.sky.takeout")
-public class TakeOutAdminApplication {
-
-    public static void main(String[] args) {
-        SpringApplication.run(TakeOutAdminApplication.class, args);
-    }
-}
-```
-
-- [ ] **Step 3: 实现 `DemoController`**
-
-```java
-package com.sky.takeout.admin.controller;
-
-import com.sky.takeout.common.result.Result;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-
-@RestController
-@RequestMapping("/api")
-public class DemoController {
-
-    @GetMapping("/hello")
-    public Result<String> hello() {
-        return Result.success("Hello, World!");
-    }
-}
-```
-
-- [ ] **Step 4: 写入 `application.yml`**
-
-```yaml
-spring:
-  application:
-    name: take-out-admin
-```
-
-- [ ] **Step 5: 迁移上下文测试**
-
-```java
-package com.sky.takeout.admin;
-
-import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-
-@SpringBootTest
-class TakeOutAdminApplicationTests {
-
-    @Test
-    void contextLoads() {
-    }
-}
-```
-
-- [ ] **Step 6: 删除根目录旧 `src/`**
-
-删除：
-
-- `src/main/java/com/sky/take_out/TakeOutApplication.java`
-- `src/main/java/com/sky/take_out/controller/DemoController.java`
-- `src/main/resources/application.properties`
-- `src/test/java/com/sky/take_out/TakeOutApplicationTests.java`
-
-并移除已空的 `src` 目录树。
-
-- [ ] **Step 7: 运行 admin 测试与打包**
-
-Run:
+- [ ] **Step 2: 鏈湴鐑熼浘楠屾敹**
 
 ```bash
-mvn clean package -pl take-out-admin -am
+mvn -pl take-out-mock-wechat spring-boot:run
 ```
 
-Expected: BUILD SUCCESS；`DemoControllerTest` 与 `TakeOutAdminApplicationTests` 通过；产物 `take-out-admin/target/take-out-admin-0.0.1-SNAPSHOT.jar`
-
-- [ ] **Step 8: Commit（仅用户授权时）**
+鍙﹀紑缁堢锛圥owerShell 鍙敤 `Invoke-RestMethod` 鎴?curl锛夛細
 
 ```bash
-git add take-out-admin
-git add -u src
-git commit -m "feat(admin): migrate boot entry and return Result from /api/hello"
+curl -s -X POST http://127.0.0.1:9090/v3/pay/transactions/native -H "Content-Type: application/json" -d "{\"out_trade_no\":\"ORD_SMOKE_1\",\"description\":\"smoke\",\"notify_url\":\"https://httpbin.org/post\",\"amount\":1.00}"
+curl -s http://127.0.0.1:9090/v3/pay/transactions/out-trade-no/ORD_SMOKE_1
+curl -s -X POST http://127.0.0.1:9090/mock/pay/confirm -H "Content-Type: application/json" -d "{\"out_trade_no\":\"ORD_SMOKE_1\"}"
+curl -s http://127.0.0.1:9090/v3/pay/transactions/out-trade-no/ORD_SMOKE_1
+```
+
+Expected: 鏈€鍚庢煡鍗?`trade_state` 涓?`SUCCESS`锛沜onfirm 杩囩▼瀵?httpbin 鏈?POST銆?
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add take-out-mock-wechat/README.md
+git commit -m "docs(mock-wechat): add runbook and Postman smoke steps"
 ```
 
 ---
+

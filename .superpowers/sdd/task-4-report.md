@@ -1,56 +1,70 @@
-# Task 4 Report: 数据源配置与 EmployeeController（含 WebMvc 测试）
+# Task 4 Report: Outbound merchant notify + manual confirm
 
 ## Status
 
-**完成** — Steps 1–6 已执行；Step 7（手动 curl）跳过；Step 8（Commit）按指令跳过。
+**DONE**
 
-## 变更文件
+## Summary
 
-| 文件 | 说明 |
-|------|------|
-| `take-out-admin/.../controller/EmployeeController.java` | `GET /api/employees/{id}` → `Result<EmployeeVO>`（无 password） |
-| `take-out-admin/.../controller/EmployeeControllerTest.java` | `@WebMvcTest` + `@MockitoBean EmployeeService` + `@Import(GlobalExceptionHandler)` |
-| `take-out-admin/src/main/resources/application.yml` | MySQL 数据源（127.0.0.1:3307 / takeout_rw）+ MyBatis-Plus 配置 |
-
-## TDD Evidence
-
-### RED（Step 1–2）
-
-先写 `EmployeeControllerTest`，再跑：
-
-```powershell
-.\mvnw.cmd -pl take-out-admin -am test "-Dtest=EmployeeControllerTest" "-Dsurefire.failIfNoSpecifiedTests=false"
-```
-
-**结果:** BUILD FAILURE — `testCompile` 报错：找不到符号 `EmployeeController`（符合预期：Controller 尚不存在）。
-
-### GREEN（Step 3–5）
-
-实现 `EmployeeController` + 更新 `application.yml` 后重跑同一命令（先 `clean` 以避免陈旧 pojo 产物）：
-
-```powershell
-.\mvnw.cmd clean test -pl take-out-admin -am "-Dtest=EmployeeControllerTest" "-Dsurefire.failIfNoSpecifiedTests=false"
-```
-
-**结果:** Tests run: 2, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS。
-
-## Step 6: 全量测试
-
-- `docker compose ps`：`take-out-mysql` **healthy**（`0.0.0.0:3307->3306`）
-- `.\mvnw.cmd clean test -pl take-out-admin -am` → BUILD SUCCESS
-  - `take-out-common` ResultTest: 3
-  - `take-out-admin`: DemoControllerTest 1 + EmployeeControllerTest 2 + TakeOutAdminApplicationTests 1 = **4**（Failures/Errors: 0）
-
-## Step 7
-
-未执行 `spring-boot:run` / curl（按 brief：可选；WebMvcTest + 全量 mvn test 已覆盖）。
+Implemented manual `POST /mock/pay/confirm` and outbound merchant HTTP notify on `take-out-mock-wechat`: HMAC-signed five-field payload (compatible with `MockPayNotifyDTO`), retries via `MockWechatProperties`, SUCCESS idempotency (no second POST). Followed TDD: RED (missing `notify` package) → GREEN (confirm + existing tests pass). `take-out-pay` untouched.
 
 ## Commits
 
-无（跳过 Step 8）。
+| SHA | Subject |
+|-----|---------|
+| `c0a289f` | feat(mock-wechat): add manual confirm and merchant HTTP notify |
+
+## TDD / Test Results
+
+| Phase | Command | Result |
+|-------|---------|--------|
+| RED | `mvn -pl take-out-mock-wechat -Dtest=TradeServiceConfirmTest test` | BUILD FAILURE — package `com.sky.takeout.mockwechat.notify` does not exist |
+| GREEN | `mvn -pl take-out-mock-wechat -Dtest=TradeServiceConfirmTest,TransactionControllerTest,HmacNotifySignUtilTest test` | **BUILD SUCCESS** — Tests run: 6, Failures: 0, Errors: 0 |
+| Module | `mvn -pl take-out-mock-wechat test` | **BUILD SUCCESS** — Tests run: 6, Failures: 0, Errors: 0 |
+
+### Test coverage
+
+| Test | Behavior |
+|------|----------|
+| `confirm_shouldPostNotifyOnce_andIdempotentSecondConfirm` | confirm → one POST with `orderNumber`; second confirm → still 1 request, state SUCCESS |
+| `TransactionControllerTest` (3) | native / query / idempotent create unchanged |
+| `HmacNotifySignUtilTest` (2) | sign util unchanged |
+
+## Files Created / Modified
+
+| Path | Action |
+|------|--------|
+| `.../notify/MerchantNotifyPayload.java` | Create |
+| `.../notify/MerchantNotifyClient.java` | Create |
+| `.../api/dto/ConfirmRequest.java` | Create |
+| `.../api/dto/ConfirmResponse.java` | Create |
+| `.../api/ConfirmController.java` | Create |
+| `.../config/HttpClientConfig.java` | Create (`RestClient.Builder` bean for Boot 4) |
+| `.../service/TradeService.java` | Modify — inject client/props; `confirm` / `confirmByOutTradeNo` |
+| `.../service/TradeServiceConfirmTest.java` | Create |
+
+## Self-Review
+
+| Check | Result |
+|-------|--------|
+| Notify body: `orderNumber`, `amount`, `timestamp`, `nonce`, `sign` | ✅ |
+| HMAC via `HmacNotifySignUtil.sign` | ✅ |
+| SUCCESS already → no second POST | ✅ |
+| `notifySent=true` only on 2xx; notify failure does not throw after SUCCESS | ✅ |
+| blank `notifyUrl` → 400; missing trade → 404 | ✅ |
+| Constructor injectable: `TradeStore`, `MerchantNotifyClient`, `MockWechatProperties` | ✅ |
+| TDD RED then GREEN documented | ✅ |
+| `take-out-pay` not modified | ✅ |
 
 ## Concerns
 
-1. PowerShell 下 `-Dsurefire.failIfNoSpecifiedTests=false` 需加引号，否则会被拆成非法 lifecycle phase。
-2. 偶发 `无法访问 Employee / 找不到类文件`：对 reactor 做 `clean` 后恢复（陈旧/不完整 `take-out-pojo` 产物）。
-3. Mockito inline agent 警告（JDK 未来行为）；不影响本次测试通过。
+1. **Boot 4 has no auto `RestClient.Builder` bean** — added `HttpClientConfig`; if Boot later ships one, `@ConditionalOnMissingBean` keeps it compatible.
+2. **`notifyMaxRetries` treated as total attempts** (not “extra retries after first”); default `2` = two tries max.
+3. **No MockMvc HTTP test for confirm** — covered by unit + MockWebServer; optional follow-up for 404/400/SUCCESS mapping.
+4. **Failed notify + SUCCESS leaves `notifySent=false`** — second confirm does not retry POST (spec/YAGNI); ops must re-trigger manually or enhance later.
+
+## Next Task Hints
+
+- Task 5: README + smoke (native → query → confirm → SUCCESS).
+- Align `merchant-notify-secret` with take-out `pay.mock-secret` for real admin notify.
+- Optional: MockMvc for `/mock/pay/confirm` and SUCCESS→409 on re-native.

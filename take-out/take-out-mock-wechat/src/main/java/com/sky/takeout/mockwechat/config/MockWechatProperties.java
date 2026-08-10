@@ -8,7 +8,7 @@ import lombok.Data;
 @ConfigurationProperties(prefix = "mock-wechat")
 public class MockWechatProperties {
     /** 与 take-out pay.mock-secret 保持一致 */
-    private String merchantNotifySecret = "change-me";
+    private String merchantNotifySecret = "takeout_admin_pay_secret_key_cyrus";
     /**
      * 首次失败后的额外重试次数（不含首次）。总尝试次数 = 1 + max(0, notifyMaxRetries)。
      * 默认 2 → 最多 3 次尝试。

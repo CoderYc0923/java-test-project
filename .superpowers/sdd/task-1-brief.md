@@ -1,78 +1,136 @@
-﻿### Task 1: 鐖?POM 涓庡瓙妯″潡渚濊禆
+﻿### Task 1: 鑴氭墜鏋?鈥?妯″潡鍙惎鍔?
 
 **Files:**
-- Modify: `pom.xml`
-- Modify: `take-out-pojo/pom.xml`
-- Modify: `take-out-system/pom.xml`
+- Modify: `take-out/pom.xml`
+- Create: `take-out-mock-wechat/pom.xml`
+- Create: `take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/MockWechatApplication.java`
+- Create: `take-out-mock-wechat/src/main/resources/application.yml`
 
 **Interfaces:**
-- Consumes: 鏃?
-- Produces: 鍙嶅簲鍫嗗彲瑙ｆ瀽 `mybatis-plus-spring-boot4-starter:3.5.17`銆乣mybatis-plus-annotation`銆丩ombok銆乣mysql-connector-j`
+- Produces: 鍙墽琛屾ā鍧?`take-out-mock-wechat`锛屼富绫?`MockWechatApplication`
 
-- [ ] **Step 1: 鍦ㄧ埗 `pom.xml` 鐨?`dependencyManagement` 澧炲姞 MyBatis-Plus**
+- [ ] **Step 1: 鐖?POM 澧炲姞 module**
 
-鍦ㄧ幇鏈?`<dependencyManagement><dependencies>` 鍐呰拷鍔狅細
+鍦?`take-out/pom.xml` 鐨?`<modules>` 涓拷鍔狅細
+
+```xml
+<module>take-out-mock-wechat</module>
+```
+
+锛堝彲閫夛級鍦?`<dependencyManagement>` 澧炲姞锛?
 
 ```xml
 <dependency>
-    <groupId>com.baomidou</groupId>
-    <artifactId>mybatis-plus-bom</artifactId>
-    <version>3.5.17</version>
-    <type>pom</type>
-    <scope>import</scope>
+    <groupId>com.sky</groupId>
+    <artifactId>take-out-mock-wechat</artifactId>
+    <version>${take-out.version}</version>
 </dependency>
 ```
 
-璇存槑锛氱敤 BOM 缁熶竴 Plus 鐩稿叧鏋勪欢鐗堟湰锛涘瓙妯″潡寮曞叆 starter / annotation 鏃跺彲涓嶅啓 version銆?
-
-- [ ] **Step 2: 鏇存柊 `take-out-pojo/pom.xml` 渚濊禆**
-
-鍦ㄧ幇鏈?`take-out-common` 渚濊禆鏃佽拷鍔狅細
+- [ ] **Step 2: 鍐?`take-out-mock-wechat/pom.xml`**
 
 ```xml
-<dependency>
-    <groupId>org.projectlombok</groupId>
-    <artifactId>lombok</artifactId>
-    <optional>true</optional>
-</dependency>
-<dependency>
-    <groupId>com.baomidou</groupId>
-    <artifactId>mybatis-plus-annotation</artifactId>
-</dependency>
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.sky</groupId>
+        <artifactId>take-out</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+    </parent>
+    <artifactId>take-out-mock-wechat</artifactId>
+    <name>take-out-mock-wechat</name>
+    <description>鍋囧井淇?V3 娌欑锛堟暀瀛︼級</description>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>mockwebserver</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
 ```
 
-- [ ] **Step 3: 鏇存柊 `take-out-system/pom.xml` 渚濊禆**
+鑻?`mockwebserver` 鐗堟湰闇€鏄惧紡鎸囧畾锛屼笌 Spring Boot BOM 绠＄悊鍐茬獊鏃跺啀鍦ㄧ埗 POM 鎴栨湰妯″潡鍔?version锛涗紭鍏堣 BOM 绠＄悊銆?
 
-鍦ㄧ幇鏈?`take-out-pojo` 渚濊禆鏃佽拷鍔狅細
+- [ ] **Step 3: 鍚姩绫讳笌閰嶇疆**
 
-```xml
-<dependency>
-    <groupId>com.baomidou</groupId>
-    <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
-</dependency>
-<dependency>
-    <groupId>com.mysql</groupId>
-    <artifactId>mysql-connector-j</artifactId>
-    <scope>runtime</scope>
-</dependency>
+`MockWechatApplication.java`:
+
+```java
+package com.sky.takeout.mockwechat;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
+
+@SpringBootApplication
+@ConfigurationPropertiesScan
+public class MockWechatApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(MockWechatApplication.class, args);
+    }
+}
 ```
 
-- [ ] **Step 4: 楠岃瘉渚濊禆鍙В鏋?*
+`application.yml`:
+
+```yaml
+server:
+  port: 9090
+
+mock-wechat:
+  merchant-notify-secret: change-me
+  notify-max-retries: 2
+  notify-retry-delay-ms: 500
+```
+
+- [ ] **Step 4: 缂栬瘧楠岃瘉鍙В鏋愭ā鍧?*
 
 Run:
 
-```powershell
-.\mvnw.cmd -q dependency:resolve -pl take-out-system -am
+```bash
+mvn -pl take-out-mock-wechat -am -DskipTests package
 ```
 
-Expected: exit code `0`锛屾棤 unresolved dependency 閿欒銆?
+Expected: `BUILD SUCCESS`
 
-- [ ] **Step 5: Commit锛堜粎褰撶敤鎴疯姹傦級**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add pom.xml take-out-pojo/pom.xml take-out-system/pom.xml
-git commit -m "build: add MyBatis-Plus and Lombok dependencies"
+git add take-out/pom.xml take-out-mock-wechat/pom.xml \
+  take-out-mock-wechat/src/main/java/com/sky/takeout/mockwechat/MockWechatApplication.java \
+  take-out-mock-wechat/src/main/resources/application.yml
+git commit -m "chore: scaffold take-out-mock-wechat module"
 ```
 
 ---
-
+
