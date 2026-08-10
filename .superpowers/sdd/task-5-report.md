@@ -64,6 +64,6 @@ BUILD SUCCESS
 
 | SHA | Subject |
 |-----|---------|
-| _(pending)_ | `fix(mock-wechat): notify timeouts, retry semantics, deeper confirm tests` |
+| `06289da` | `fix(mock-wechat): notify timeouts, retry semantics, deeper confirm tests` |
 
 `take-out-pay` untouched.
