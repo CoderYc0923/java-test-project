@@ -323,3 +323,6 @@ amount={amount.toPlainString()}&nonce={nonce}&orderNumber={orderNumber}&timestam
 | 部署 | 本地 9090 | 微信云 |
 
 商户侧后续改造建议：将原进程内 Mock Client 改为对本 Base URL 发起 §2 / §3；用户「去支付」改为调用 §4 或引导操作员 confirm。
+
+手敲改造教程（完整代码 + 注解）：  
+[`docs/tutorials/2026-08-10-refactor-pay-http-mock-wechat.md`](../docs/tutorials/2026-08-10-refactor-pay-http-mock-wechat.md)

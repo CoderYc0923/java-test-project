@@ -32,7 +32,6 @@ import com.sky.takeout.pojo.enums.PayStatus;
 @Component
 public class MockPaymentGateway {
 
-    private final MockWeChatPayClient mockWeChatPayClient;
     private final OrderPayPort orderPayPort;
     private final PayProperties payProperties;
     private final RedisIdempotentHelper redisIdempotentHelper;
@@ -42,11 +41,10 @@ public class MockPaymentGateway {
     private static final String NONCE_KEY_PREFIX = "order:pay:nonce:";
 
     public MockPaymentGateway(OrderPayPort orderPayPort, PayProperties payProperties,
-            RedisIdempotentHelper redisIdempotentHelper, @Lazy MockWeChatPayClient mockWeChatPayClient) {
+            RedisIdempotentHelper redisIdempotentHelper) {
         this.orderPayPort = orderPayPort;
         this.payProperties = payProperties;
         this.redisIdempotentHelper = redisIdempotentHelper;
-        this.mockWeChatPayClient = mockWeChatPayClient;
     }
 
     /**
@@ -73,7 +71,7 @@ public class MockPaymentGateway {
         }
 
         // 调用微信支付
-        mockWeChatPayClient.sendPaidNotifyAsync(orderId);
+        
         log.info("请求微信支付 orderId={} number={}", orderId, order.getNumber());
         return order;
     }

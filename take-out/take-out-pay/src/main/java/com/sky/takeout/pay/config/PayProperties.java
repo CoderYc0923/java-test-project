@@ -38,7 +38,16 @@ public class PayProperties {
     private Long timestampSkewSeconds = 300L;
 
     /**
-     * 微信延迟回调（毫秒）
+     * 假微信沙箱地址，不要末尾斜杠。
+     * 例：http://127.0.0.1:9090
      */
-    private Long notifyDelayMs = 1500L;
+    private String mockWechatBaseUrl = "http://127.0.0.1:9090";
+
+     /**
+     * 商户支付结果通知 URL（完整路径），下单时传给假微信的 notify_url。
+     * 例：http://127.0.0.1:8080/admin/order/mockPay/notify
+     * <p>
+     * Docker 里假微信若访问宿主机，可能要用 host.docker.internal。
+     */
+    private String merchantNotifyUrl = "http://127.0.0.1:8080/admin/order/mockPay/notify";
 }
