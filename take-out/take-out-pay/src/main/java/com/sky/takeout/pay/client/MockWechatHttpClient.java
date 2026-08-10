@@ -8,8 +8,6 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClient.Builder;
-import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 import com.sky.takeout.common.exception.BusinessException;
@@ -78,12 +76,12 @@ public class MockWechatHttpClient {
              * 发起 HTTP 请求
              */
             TransactionResponse response = restClient.post()
-                .uri("/v3/pay/transactions/native")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(body)
-                .retrieve()
+                .uri("/v3/pay/transactions/native") // url
+                .contentType(MediaType.APPLICATION_JSON) // 请求头
+                .body(body) // 请求体
+                .retrieve() // 发起请求
                 // 4xx/5xx 会抛出 RestClientResponseException
-                .body(TransactionResponse.class);
+                .body(TransactionResponse.class); // 响应体
 
             /**
              * 处理响应
@@ -106,6 +104,23 @@ public class MockWechatHttpClient {
             throw new BusinessException(ErrorCode.ERROR, "创建微信支付请求异常: {}" + e.getMessage());
         }
 
+    }
+
+    /**
+     * 查询微信支付订单
+     * @param outTradeNo 订单号
+     * @return
+     */
+    public TransactionResponse queryByOutTradeNo(String outTradeNo) {
+        try {
+            return restClient.get()
+                .uri("/v3/pay/transactions/out-trade-no/{outTradeNo}", outTradeNo)
+                .retrieve()
+                .body(TransactionResponse.class);
+        } catch (RestClientResponseException e) {
+            log.warn("查询微信支付订单失败 status={}, body={}", e.getStatusCode().value(), e.getResponseBodyAsString());
+            throw new BusinessException(ErrorCode.ERROR, outTradeNo + "查询微信支付订单失败");
+        }
     }
 
     /**

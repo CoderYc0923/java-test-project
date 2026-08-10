@@ -2,7 +2,7 @@ server:
   port: 9090
 
 mock-wechat:
-  merchant-notify-secret: change-me
+  merchant-notify-secret: takeout_admin_pay_secret_key_cyrus
   # 额外重试次数（不含首次）；总尝试 = 1 + notify-max-retries（默认 2 → 共 3 次）
   notify-max-retries: 2
   notify-retry-delay-ms: 500

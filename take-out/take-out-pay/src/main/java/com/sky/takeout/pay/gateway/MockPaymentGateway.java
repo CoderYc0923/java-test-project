@@ -9,6 +9,8 @@ import org.springframework.util.StringUtils;
 
 import com.sky.takeout.common.exception.BusinessException;
 import com.sky.takeout.common.result.ErrorCode;
+import com.sky.takeout.pay.client.MockWechatHttpClient;
+import com.sky.takeout.pay.client.dto.TransactionResponse;
 import com.sky.takeout.pay.config.PayProperties;
 import com.sky.takeout.pay.port.OrderPayPort;
 import com.sky.takeout.pay.redis.RedisIdempotentHelper;
@@ -35,16 +37,18 @@ public class MockPaymentGateway {
     private final OrderPayPort orderPayPort;
     private final PayProperties payProperties;
     private final RedisIdempotentHelper redisIdempotentHelper;
+    private final MockWechatHttpClient mockWechatHttpClient;
 
     private static final Logger log = LoggerFactory.getLogger(MockPaymentGateway.class);
     private static final String PAY_LOCK_PREFIX = "order:pay:lock:";
     private static final String NONCE_KEY_PREFIX = "order:pay:nonce:";
 
     public MockPaymentGateway(OrderPayPort orderPayPort, PayProperties payProperties,
-            RedisIdempotentHelper redisIdempotentHelper) {
+            RedisIdempotentHelper redisIdempotentHelper, MockWechatHttpClient mockWechatHttpClient) {
         this.orderPayPort = orderPayPort;
         this.payProperties = payProperties;
         this.redisIdempotentHelper = redisIdempotentHelper;
+        this.mockWechatHttpClient = mockWechatHttpClient;
     }
 
     /**
@@ -71,8 +75,10 @@ public class MockPaymentGateway {
         }
 
         // 调用微信支付
+        TransactionResponse response = mockWechatHttpClient.createNativePay(order);
+
+        log.info("用户请求微信支付 orderId={} number={} prepayId={}", orderId, order.getNumber(), response.getPrepayId());
         
-        log.info("请求微信支付 orderId={} number={}", orderId, order.getNumber());
         return order;
     }
 

@@ -29,7 +29,7 @@ pay:
     timestamp-skew-seconds: 300 # 允许的时间戳偏差（秒），防重放
     # 对接假微信
     mock-wechat-base-url: http://127.0.0.1:9090
-    merchat-notify-url: http://127.0.0.1:8080/admin/order/mockPay/notify
+    merchant-notify-url: http://127.0.0.1:8080/admin/order/mockPay/notify
 
 mybatis-plus:
   configuration:

@@ -4,7 +4,7 @@
       <div class="tableBar">
         <span class="page-title">模拟支付</span>
         <span class="page-tip"
-          >待付款列表；点支付后等待模拟微信回调（约 1～2 秒），页面会自动轮询</span
+          >点支付 → 打开假微信确认页 → 手动确认后回调商户；本页自动轮询</span
         >
         <div class="bar-actions">
           <el-button @click="$router.push('/order/mock')">去模拟下单</el-button>
@@ -47,7 +47,7 @@
           </template>
         </el-table-column>
         <el-table-column prop="orderTime" label="下单时间" width="170" />
-        <el-table-column label="操作" width="140" align="center" fixed="right">
+        <el-table-column label="操作" width="160" align="center" fixed="right">
           <template slot-scope="scope">
             <el-button
               type="text"
@@ -82,6 +82,9 @@ import { Component, Vue } from 'vue-property-decorator'
 import Empty from '@/components/Empty/index.vue'
 import { getOrderDetailPage, mockPayOrder } from '@/api/order'
 
+/** 假微信沙箱（与 pay.mock-wechat-base-url 一致） */
+const MOCK_WECHAT_BASE = 'http://127.0.0.1:9090'
+
 @Component({
   name: 'OrderMockPay',
   components: { Empty },
@@ -103,7 +106,6 @@ export default class extends Vue {
   private async loadList() {
     this.loading = true
     try {
-      // status=1 待付款
       const { data } = await getOrderDetailPage({
         page: this.page,
         pageSize: this.pageSize,
@@ -179,11 +181,27 @@ export default class extends Vue {
     return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
+  /** 打开假微信确认支付页（用户在那边点「确认支付」才会回调） */
+  private openWechatCheckout(outTradeNo: string) {
+    const url =
+      MOCK_WECHAT_BASE +
+      '/mock/pay/checkout?out_trade_no=' +
+      encodeURIComponent(outTradeNo)
+    const win = window.open(url, '_blank', 'width=440,height=720')
+    if (!win) {
+      this.$message.warning(
+        '浏览器拦截了弹窗，请允许弹窗后重试，或手动打开：' + url
+      )
+    }
+    return url
+  }
+
   /**
-   * 列表只查 status=1 待付款；回调成功后该单会从列表消失，即视为支付成功。
+   * 列表只查 status=1；回调入账后该单消失即成功。
+   * 手动确认需要时间，轮询拉长到约 90 秒。
    */
   private async pollUntilPaid(orderId: number | string) {
-    const maxTries = 12
+    const maxTries = 110
     for (let i = 0; i < maxTries; i++) {
       await this.sleep(800)
       await this.loadList()
@@ -200,13 +218,13 @@ export default class extends Vue {
   private async handlePay(row: any) {
     try {
       await this.$confirm(
-        `确认模拟支付订单 ${row.number}？金额 ¥${this.formatAmount(
+        `将向假微信统一下单，并打开支付确认页。\n订单 ${row.number}，金额 ¥${this.formatAmount(
           row.amount
-        )}（将异步等待微信回调）`,
-        '模拟支付',
+        )}\n请在弹出页点击「确认支付」。`,
+        '模拟微信支付',
         {
-          type: 'warning',
-          confirmButtonText: '确认支付',
+          type: 'info',
+          confirmButtonText: '去支付',
           cancelButtonText: '取消',
         }
       )
@@ -218,12 +236,18 @@ export default class extends Vue {
     try {
       const { data } = await mockPayOrder(row.id)
       if (data.code !== 1) {
-        this.$message.error(data.msg || '发起支付失败')
+        this.$message.error(data.msg || '统一下单失败')
         return
       }
 
-      // PUT 只表示「已发起」；真正改库在异步 notify 之后
-      this.$message.success('已发起支付，等待模拟微信回调…')
+      const outTradeNo =
+        (data.data && data.data.number) || row.number
+      const checkoutUrl = this.openWechatCheckout(String(outTradeNo))
+      this.$message.success(
+        '已下单到假微信，请在确认页完成支付（若无弹窗请打开：' +
+          checkoutUrl +
+          '）'
+      )
       this.highlightId = null
 
       const paid = await this.pollUntilPaid(row.id)
@@ -241,13 +265,15 @@ export default class extends Vue {
             /* 留在本页 */
           })
       } else {
-        this.$message.warning('仍未收到支付结果，请稍后点刷新或检查后端回调日志')
+        this.$message.warning(
+          '仍未入账：请确认已在假微信页点「确认支付」，且密钥/notify 配置正确'
+        )
       }
     } catch (e) {
       const err: any = e
       this.$message.error(
         (err && err.message) ||
-          '请求失败：请确认后端已实现 PUT /admin/order/mockPay/{id}'
+          '请求失败：请确认后端 mockPay 与假微信 9090 已启动'
       )
     } finally {
       this.payingId = null

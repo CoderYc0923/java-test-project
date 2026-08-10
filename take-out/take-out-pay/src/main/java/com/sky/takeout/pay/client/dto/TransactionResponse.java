@@ -4,15 +4,22 @@ import java.math.BigDecimal;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
  * 微信支付响应
  * TransactionResponse
+ *
+ * 注意：RestClient / Jackson 反序列化需要无参构造；
+ * 只有 @Builder 时 Lombok 往往不生成无参构造，会报 Type definition error。
  */
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class TransactionResponse {
 
     /** 商户订单号 = orders.number */
