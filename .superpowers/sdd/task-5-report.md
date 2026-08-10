@@ -1,62 +1,69 @@
-# Task 5 Report: admin 启动模块迁移与 `/api/hello`
+# Task 5 Report: Module README + smoke verification
 
 ## Status
 
-**DONE_WITH_CONCERNS** — 构建与测试通过，未提交。
+**DONE**
+
+## Summary
+
+Created `take-out-mock-wechat/README.md` with startup, `merchant-notify-secret` alignment, Postman three-step flow, admin `notify_url` example, and curl/PowerShell smoke commands. Ran live smoke against port 9090: native → query (NOTPAY) → confirm → query (SUCCESS). httpbin notify succeeded on first attempt. `take-out-pay` untouched.
+
+## Commits
+
+| SHA | Subject |
+|-----|---------|
+| `56679a0` | docs(mock-wechat): add runbook and Postman smoke steps |
+
+## Smoke Results
+
+| Step | Result |
+|------|--------|
+| `POST /v3/pay/transactions/native` | `trade_state=NOTPAY`, prepay_id returned |
+| `GET .../ORD_SMOKE_1` (before) | `NOTPAY` |
+| `POST /mock/pay/confirm` | `trade_state=SUCCESS` |
+| `GET .../ORD_SMOKE_1` (after) | **`SUCCESS`** |
+| Merchant notify | Log: `merchant notify ok outTradeNo=ORD_SMOKE_1 attempt=1` (httpbin reachable) |
 
 ## Concerns
 
-Spring Boot 4.1.0 将 `@AutoConfigureMockMvc` 从 `org.springframework.boot.test.autoconfigure.web.servlet` 迁移至 `org.springframework.boot.webmvc.test.autoconfigure`。brief 中的 import 无法编译；已在 `DemoControllerTest` 中使用新包路径，功能与 brief 预期一致。
+1. Default `merchant-notify-secret: change-me` in repo yml ≠ admin `takeout_admin_pay_secret_key_cyrus` — README documents override; real admin notify needs matching secret.
+2. Smoke used `ORD_SMOKE_1` once; repeat runs need a new `out_trade_no` or service restart (in-memory store).
 
-## TDD 流程
+## Self-Review
 
-1. **Red** — 先创建 `DemoControllerTest`（brief 原始 import），编译失败（包不存在 + 无启动类/Controller）。
-2. **Green** — 实现 `TakeOutAdminApplication`、`DemoController`、`application.yml`、`TakeOutAdminApplicationTests`；修正 SB4 import 后测试通过。
-3. **Refactor** — 无额外重构；删除根目录旧 `src/` 树。
+| Check | Result |
+|-------|--------|
+| README: startup command | ✅ |
+| README: secret alignment | ✅ |
+| README: native → query → confirm | ✅ |
+| README: admin notify_url + whitelist note | ✅ |
+| README: no take-out-pay change / Client pointer | ✅ |
+| Live smoke executed | ✅ |
+| take-out-pay not modified | ✅ |
 
-## 新增文件
+## Final-review fixes
 
-| 文件 | 说明 |
-|------|------|
-| `take-out-admin/src/main/java/com/sky/takeout/admin/TakeOutAdminApplication.java` | 启动类，`scanBasePackages = "com.sky.takeout"` |
-| `take-out-admin/src/main/java/com/sky/takeout/admin/controller/DemoController.java` | `GET /api/hello` → `Result.success("Hello, World!")` |
-| `take-out-admin/src/main/resources/application.yml` | `spring.application.name: take-out-admin` |
-| `take-out-admin/src/test/java/com/sky/takeout/admin/TakeOutAdminApplicationTests.java` | 上下文加载测试 |
-| `take-out-admin/src/test/java/com/sky/takeout/admin/controller/DemoControllerTest.java` | MockMvc 集成测试 |
+**Status:** DONE
 
-## 删除文件
+### Changes
 
-根目录旧单模块遗留（整棵 `take-out/src/` 已移除）：
+1. **RestClient timeouts** — `HttpClientConfig` sets connect 3s / read 5s via `SimpleClientHttpRequestFactory`.
+2. **Confirm lock scope** — `TradeService.confirmByOutTradeNo` marks `SUCCESS` + save inside synchronized block, calls `MerchantNotifyClient.send` outside the lock, then sets `notifySent` under a short sync after 2xx. Second confirm still sees `SUCCESS` and skips notify.
+3. **notify-max-retries semantics** — `totalAttempts = 1 + max(0, notifyMaxRetries)` (default 2 → 3 attempts). Documented in `MockWechatProperties` + `application.yml`.
+4. **TradeServiceConfirmTest** — asserts five JSON fields + HMAC verify with `test-secret`; added 500→200 retry case (`maxRetries=1` → `requestCount=2`).
 
-- `src/main/java/com/sky/take_out/TakeOutApplication.java`
-- `src/main/java/com/sky/take_out/controller/DemoController.java`
-- `src/main/resources/application.properties`
-- `src/test/java/com/sky/take_out/TakeOutApplicationTests.java`
+### Verification
 
-`take-out-*/src` 未动。
-
-## 接口行为
-
-- **Endpoint:** `GET /api/hello`
-- **Response:** `{"code":1,"msg":"success","data":"Hello, World!"}`
-- **依赖:** `Result.success(T)` from `take-out-common`；framework 组件（`GlobalExceptionHandler`、`WebMvcConfig`）经 `scanBasePackages = "com.sky.takeout"` 被扫描注册。
-
-## 验证
-
-```bash
-.\mvnw.cmd clean package -pl take-out-admin -am
+```text
+mvn -pl take-out-mock-wechat test
+Tests run: 7, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
 ```
 
-**结果:** BUILD SUCCESS
+### Commit
 
-| 测试类 | 结果 |
-|--------|------|
-| `DemoControllerTest.hello_returnsUnifiedResult` | PASS |
-| `TakeOutAdminApplicationTests.contextLoads` | PASS |
-| `ResultTest`（common，-am 连带） | 3 PASS |
+| SHA | Subject |
+|-----|---------|
+| _(pending)_ | `fix(mock-wechat): notify timeouts, retry semantics, deeper confirm tests` |
 
-**产物:** `take-out-admin/target/take-out-admin-0.0.1-SNAPSHOT.jar`
-
-## 未执行
-
-- Git commit（按指令跳过 Step 8）
+`take-out-pay` untouched.

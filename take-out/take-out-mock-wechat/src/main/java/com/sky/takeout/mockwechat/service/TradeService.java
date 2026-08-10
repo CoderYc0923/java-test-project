@@ -78,6 +78,8 @@ public class TradeService {
 
     public ConfirmResponse confirmByOutTradeNo(String outTradeNo) {
         Object lock = confirmLocks.computeIfAbsent(outTradeNo, k -> new Object());
+        Trade toNotify = null;
+
         synchronized (lock) {
             Trade trade = tradeStore.findByOutTradeNo(outTradeNo)
                     .orElseThrow(() -> new MockWechatException(
@@ -99,15 +101,21 @@ public class TradeService {
 
             trade.setTradeState(TradeState.SUCCESS);
             trade.setPaidAt(Instant.now());
-
-            boolean notified = merchantNotifyClient.send(trade);
-            if (notified) {
-                trade.setNotifySent(true);
-            }
-
             tradeStore.save(trade);
-            return toConfirmResponse(trade);
+            toNotify = trade;
         }
+
+        // Notify outside the lock so concurrent confirms are not blocked on HTTP I/O
+        boolean notified = merchantNotifyClient.send(toNotify);
+        if (notified) {
+            synchronized (lock) {
+                Trade trade = tradeStore.findByOutTradeNo(outTradeNo).orElse(toNotify);
+                trade.setNotifySent(true);
+                tradeStore.save(trade);
+                return toConfirmResponse(trade);
+            }
+        }
+        return toConfirmResponse(toNotify);
     }
 
     private static ConfirmResponse toConfirmResponse(Trade trade) {

@@ -28,11 +28,12 @@ public class MerchantNotifyClient {
 
     /**
      * POST notifyUrl with HMAC-signed payload. Retries on non-2xx / exceptions.
+     * Total attempts = 1 + max(0, notifyMaxRetries).
      *
      * @return true if at least one attempt returned 2xx
      */
     public boolean send(Trade trade) {
-        int maxAttempts = Math.max(1, properties.getNotifyMaxRetries());
+        int maxAttempts = 1 + Math.max(0, properties.getNotifyMaxRetries());
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
                 Long timestamp = System.currentTimeMillis() / 1000;
