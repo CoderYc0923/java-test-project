@@ -166,9 +166,6 @@ public class MockPaymentGateway {
             throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "支付处理中，请稍后重试");
         }
 
-        // 解锁挂到事务结束之后，以防止CAS入账前释放锁被其他请求占用
-        registerUnlockAndSideEffects(lockKey, lockToken, previewOrder.getId());
-
         try {
             return payNotifyTxService.markPaidInShrotTx(dto, lockKey, lockToken);
         } catch (RuntimeException e) {
@@ -178,51 +175,6 @@ public class MockPaymentGateway {
             throw e;
         }
 
-    }
-
-    /**
-     * 注册事务同步
-     * 如果当前没有事务同步，则立即解锁
-     * 如果当前有事务同步，则注册事务同步,事务结束后执行解锁和投递
-     * @param lockKey 锁key
-     * @param lockToken 锁token
-     * @param orderId 订单id
-     */
-    private void registerUnlockAndSideEffects(String lockKey, String lockToken, Long orderId) {
-        Runnable unlock = () -> redisIdempotentHelper.unlock(lockKey, lockToken);
-        Runnable publish = () -> {
-            try {
-                payOutboxPort.publishPendingForOrder(orderId);
-            } catch (Exception e) {
-                // 不回滚已经提交的入账；留给对账/定时扫outbox
-                log.warn("afterCommit 投递 Outbox 失败，orderId={}", orderId);
-            }
-        };
-
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            // 还没有事务同步：先起段事务时Spring会开启同步
-            // 若此处仍inactive，说明调用链有问题：调用方try/fianlly解锁
-            // 推荐写法：先开启事务再锁，或把【加锁+注册】放进一个带事务的门面
-            //
-            // 本推荐结构是【锁在事务外，短事务在锁内】
-            // 进入markPaidInShortTx才会avtive synchronization
-            // 因此这里用【延迟到短事务方法开头再注册】更稳
-            log.warn("无事务同步，回退为立即解锁 orderId={}", orderId);
-            unlock.run();
-            return;
-        }
-
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                publish.run();
-            }
-
-            @Override
-            public void afterCompletion(int status) {
-                unlock.run();
-            }
-        });
     }
 
     /**
