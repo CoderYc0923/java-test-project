@@ -42,6 +42,7 @@ public class MockPaymentGateway {
     private final PayProperties payProperties;
     private final RedisIdempotentHelper redisIdempotentHelper;
     private final MockWechatHttpClient mockWechatHttpClient;
+    private final PayNotifyTxService payNotifyTxService;
 
     private static final Logger log = LoggerFactory.getLogger(MockPaymentGateway.class);
     /** 回调入账互斥 */
@@ -53,12 +54,13 @@ public class MockPaymentGateway {
 
     public MockPaymentGateway(OrderPayPort orderPayPort, PayProperties payProperties,
             RedisIdempotentHelper redisIdempotentHelper, MockWechatHttpClient mockWechatHttpClient,
-            PayOutboxPort payOutboxPort) {
+            PayOutboxPort payOutboxPort, PayNotifyTxService payNotifyTxService) {
         this.orderPayPort = orderPayPort;
         this.payProperties = payProperties;
         this.redisIdempotentHelper = redisIdempotentHelper;
         this.mockWechatHttpClient = mockWechatHttpClient;
         this.payOutboxPort = payOutboxPort;
+        this.payNotifyTxService = payNotifyTxService;
     }
 
     /**
@@ -125,36 +127,9 @@ public class MockPaymentGateway {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "参数不能为空");
         }
 
-        String secret = payProperties.getMockSecret();
-        if (!StringUtils.hasText(secret)) {
-            throw new BusinessException(ErrorCode.ERROR, "pay.mock-secret 未配置，无法验签");
-        }
+        verifySignAndTimeWindow(dto);
 
-        // 验签
-        boolean ok = HmacPaySignUtil.verify(
-                dto.getOrderNumber(),
-                dto.getAmount(),
-                dto.getTimestamp(),
-                dto.getNonce(),
-                secret,
-                dto.getSign());
-
-        if (!ok) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "验签失败");
-        }
-
-        /**
-         * 时间窗口（防过期重放）
-         * 因为渠道回调可能延迟，所以需要一个时间窗口来防止重放
-         * 重放是攻击者重放之前已经处理过的请求，以达到重复支付的目的
-         */
-        Long skew = payProperties.getTimestampSkewSeconds() == null ? 300L : payProperties.getTimestampSkewSeconds();
-        Long now = System.currentTimeMillis() / 1000;
-        // 时间窗口过期
-        if (Math.abs(now - dto.getTimestamp()) > skew) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "时间窗口过期");
-        }
-
+        
         /**
          * key 必须带「随机 nonce」，不能只用订单号。
          * nonce 只挡「同一条通知重放」。
@@ -177,14 +152,11 @@ public class MockPaymentGateway {
             return existed;
         }
 
-        // 生产增强（本文不实现）：此处再 insert pay_notify_log(nonce) 唯一索引；
-        // 冲突则同样走「已付成功 / 未付 429」。Redis 只是热路径加速。
-
         // 同单入账锁
         Order previewOrder = orderPayPort.findOrderByNumber(dto.getOrderNumber());
         if (previewOrder == null) {
             // 占用了nonce但单不存在：可删nonce以便修数据后重试，生产常留坑 + 告警
-            redisIdempotentHelper.delete(nonceKey);
+            redisIdempotentHelper.delete(nonceKey);  // 唯一建议删 nonce 的情况：单根本不存在，允许修好后再用同通知试
             throw new BusinessException(ErrorCode.CONFLICT, "订单不存在");
         }
 
@@ -198,12 +170,11 @@ public class MockPaymentGateway {
         registerUnlockAndSideEffects(lockKey, lockToken, previewOrder.getId());
 
         try {
-            return markPaidInShrotTx(dto);
+            return payNotifyTxService.markPaidInShrotTx(dto, lockKey, lockToken);
         } catch (RuntimeException e) {
-             // 4) 业务失败：默认不删 nonce（与现网 delete 相反）
-            //    原因：验签已通过，留下「见过这条通知」；渠道应换策略（查单/新通知）或等 429 退避
-            //    仅「明显可安全重放」的数据错误（如订单不存在）才在上面删过 nonce
-            //redisIdempotentHelper.delete(nonceKey);
+             // 若短事务根本没开起来就失败，Synchronization 可能没注册 → 这里兜底解锁
+            // 正常路径：TxService 第一行已注册 afterCompletion，这里再 unlock 会因 token 校验变 no-op 或解两次需幂等
+            // 更干净：仅在「确认未注册」时解锁。简化起见 TxService 用 try/finally 保证注册失败也解锁。
             throw e;
         }
 
@@ -255,53 +226,43 @@ public class MockPaymentGateway {
     }
 
     /**
-     * 短事务：查单、核金额、CAS、写 Outbox。
-     * <p>
-     * 必须由 Spring 代理调用（同类 self 调用会让 @Transactional 失效）。
-     * 若网关自调用，请拆到独立 @Component（如 PayNotifyTxService）或注入 self。
-     * 
-     * @param dto
-     * @return
+     * 验签和时间窗口
+     * @param dto 微信支付回调参数
      */
-    @Transactional(rollbackFor = Exception.class)
-    public Order markPaidInShrotTx(MockPayNotifyDTO dto) {
-        // 查单
-        Order order = orderPayPort.findOrderByNumber(dto.getOrderNumber());
-        if (order == null) {
-            throw new BusinessException(ErrorCode.CONFLICT, "订单不存在");
+    private void verifySignAndTimeWindow(MockPayNotifyDTO dto) {
+        String secret = payProperties.getMockSecret();
+        if (!StringUtils.hasText(secret)) {
+            throw new BusinessException(ErrorCode.ERROR, "pay.mock-secret 未配置，无法验签");
         }
 
-        // 核对金额
-        if (order.getAmount() == null || order.getAmount().compareTo(dto.getAmount()) != 0) {
-            throw new BusinessException(ErrorCode.CONFLICT, "支付金额与订单不一致");
+        // 验签
+        boolean ok = HmacPaySignUtil.verify(
+                dto.getOrderNumber(),
+                dto.getAmount(),
+                dto.getTimestamp(),
+                dto.getNonce(),
+                secret,
+                dto.getSign());
+
+        if (!ok) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "验签失败");
         }
 
-        // 已支付：业务幂等，回成功
-        if (isPaid(order)) {
-            return order;
+        /**
+         * 时间窗口（防过期重放）
+         * 因为渠道回调可能延迟，所以需要一个时间窗口来防止重放
+         * 重放是攻击者重放之前已经处理过的请求，以达到重复支付的目的
+         */
+        Long skew = payProperties.getTimestampSkewSeconds() == null ? 300L : payProperties.getTimestampSkewSeconds();
+        Long now = System.currentTimeMillis() / 1000;
+        // 时间窗口过期
+        if (Math.abs(now - dto.getTimestamp()) > skew) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "时间窗口过期");
         }
 
-        if (order.getStatus() != OrderStatus.PENDING_PAYMENT || order.getPayStatus() != PayStatus.UNPAID) {
-            throw new BusinessException(ErrorCode.CONFLICT, "当前订单不可支付");
-        }
-
-        int rows = orderPayPort.casMarkPaid(order.getId());
-        if (rows == 0) {
-            Order latest = requireOrderById(order.getId());
-            if (isPaid(latest)) {
-                return latest; // 并发下别人已支付成功
-            }
-            throw new BusinessException(ErrorCode.CONFLICT, "订单状态已变更，支付失败");
-        }
-
-        // 与入账同事务写入Outbox；真正发送在afterCommit
-        payOutboxPort.insertOrderPaid(order.getId(), order.getNumber());
-
-        log.info("订单{}回调支付成功，插入订单ORDER_PAID消息", order.getId());
-        return requireOrderById(order.getId());
 
     }
-
+    
     /**
      * 解析支付锁过期时间
      * 
