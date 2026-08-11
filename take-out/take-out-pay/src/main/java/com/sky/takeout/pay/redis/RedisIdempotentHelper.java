@@ -51,9 +51,9 @@ public class RedisIdempotentHelper {
     /**
      * 尝试设置一个 NX 的 key，如果设置成功，则返回 true，否则返回 false。
      * opsForValue().setIfAbsent 是 Redis 的命令，用于设置一个 key，如果该 key 不存在，则设置成功，并返回 true；否则返回 false。
-     * @param key
-     * @param value
-     * @param ttlSeconds
+     * @param key 键
+     * @param value 值
+     * @param ttlSeconds 过期时间
      * @return
      */
     public boolean trySetNx(String key, String value, Long ttlSeconds) {

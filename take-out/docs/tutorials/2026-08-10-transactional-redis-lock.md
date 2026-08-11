@@ -192,3 +192,10 @@ public Order markPaidWithLock(Long orderId) {
 ## 7. 一句话
 
 **`@Transactional` 保证这次 DB 读写的原子提交；Redis 锁减轻同单并发；钱只入一次靠 CAS。两者不同步是常态，不是 bug；nonce 键和锁 TTL 配错才是 bug。通知失败的短暂重试在假微信；完整补偿要商户查单/对账。**
+
+---
+
+## 续篇
+
+边界怎么收干净（短事务、`afterCommit` 解锁、nonce 不乱删、Outbox、点支付互斥）：见  
+`2026-08-11-pay-callback-short-tx-and-lock.md`（目标形态教程，**未改现网代码**）。
