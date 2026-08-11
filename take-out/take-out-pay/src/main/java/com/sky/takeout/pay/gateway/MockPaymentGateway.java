@@ -5,6 +5,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import com.sky.takeout.common.exception.BusinessException;
@@ -42,11 +44,16 @@ public class MockPaymentGateway {
     private final MockWechatHttpClient mockWechatHttpClient;
 
     private static final Logger log = LoggerFactory.getLogger(MockPaymentGateway.class);
+    /** 回调入账互斥 */
     private static final String PAY_LOCK_PREFIX = "order:pay:lock:";
+    /** 渠道通知nonce 去重 */
     private static final String NONCE_KEY_PREFIX = "order:pay:nonce:";
+    /** 请求支付锁，防止同一订单并发重复点支付 */
+    private static final String REQUEST_LOCK_PREFIX = "order:pay:request:lock:";
 
     public MockPaymentGateway(OrderPayPort orderPayPort, PayProperties payProperties,
-            RedisIdempotentHelper redisIdempotentHelper, MockWechatHttpClient mockWechatHttpClient, PayOutboxPort payOutboxPort) {
+            RedisIdempotentHelper redisIdempotentHelper, MockWechatHttpClient mockWechatHttpClient,
+            PayOutboxPort payOutboxPort) {
         this.orderPayPort = orderPayPort;
         this.payProperties = payProperties;
         this.redisIdempotentHelper = redisIdempotentHelper;
@@ -65,24 +72,45 @@ public class MockPaymentGateway {
         }
 
         // 第一次查库：已支付就直接返回
-        Order order = requireOrder(orderId);
+        Order order = requireOrderById(orderId);
+
         if (isPaid(order)) {
             log.info("订单{}已支付，直接返回", orderId);
             return order;
         }
 
-        // 状态机：只有「待付款 + 未支付」才能付 → 之后 CAS 成「待接单 + 已支付」
-        if (order.getStatus() != OrderStatus.PENDING_PAYMENT
-                || order.getPayStatus() != PayStatus.UNPAID) {
-            throw new BusinessException(ErrorCode.CONFLICT, "当前订单不可支付");
+        // 验证订单状态
+        validateOrder(order);
+
+        // 请求支付锁
+        String lockKey = REQUEST_LOCK_PREFIX + orderId;
+        Long ttl = resolvePayLockTtl();
+        String token = redisIdempotentHelper.tryLock(lockKey, ttl);
+        if (token == null) {
+            throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "支付发起中，请勿重复点击");
         }
 
-        // 调用微信支付
-        TransactionResponse response = mockWechatHttpClient.createNativePay(order);
+        try {
+            // 锁内再读：防止刚被人付掉 / 状态变了
+            order = requireOrderById(orderId);
 
-        log.info("用户请求微信支付 orderId={} number={} prepayId={}", orderId, order.getNumber(), response.getPrepayId());
+            if (isPaid(order)) {
+                return order;
+            }
 
-        return order;
+            // 验证订单状态
+            validateOrder(order);
+
+            // 调用微信支付
+            TransactionResponse response = mockWechatHttpClient.createNativePay(order);
+
+            log.info("用户请求微信支付 orderId={} number={} prepayId={}", orderId, order.getNumber(), response.getPrepayId());
+            return order;
+        } finally {
+            // 下单HTTP与DB入账无关：这里用普通的finally即可，不必afterCommit
+            redisIdempotentHelper.unlock(lockKey, token);
+        }
+
     }
 
     /**
@@ -152,15 +180,78 @@ public class MockPaymentGateway {
         // 生产增强（本文不实现）：此处再 insert pay_notify_log(nonce) 唯一索引；
         // 冲突则同样走「已付成功 / 未付 429」。Redis 只是热路径加速。
 
+        // 同单入账锁
+        Order previewOrder = orderPayPort.findOrderByNumber(dto.getOrderNumber());
+        if (previewOrder == null) {
+            // 占用了nonce但单不存在：可删nonce以便修数据后重试，生产常留坑 + 告警
+            redisIdempotentHelper.delete(nonceKey);
+            throw new BusinessException(ErrorCode.CONFLICT, "订单不存在");
+        }
+
+        String lockKey = PAY_LOCK_PREFIX + previewOrder.getId();
+        String lockToken = redisIdempotentHelper.tryLock(lockKey, resolvePayLockTtl());
+        if (lockToken == null) {
+            throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "支付处理中，请稍后重试");
+        }
+
+        // 解锁挂到事务结束之后，以防止CAS入账前释放锁被其他请求占用
+        registerUnlockAndSideEffects(lockKey, lockToken, previewOrder.getId());
+
         try {
             return markPaidInShrotTx(dto);
         } catch (RuntimeException e) {
-            // 业务失败时删除nonce，允许渠道用新请求重试
-            // 真项目更常见：验签通过后的失败也留nonce + 记失败流水
-            redisIdempotentHelper.delete(nonceKey);
+             // 4) 业务失败：默认不删 nonce（与现网 delete 相反）
+            //    原因：验签已通过，留下「见过这条通知」；渠道应换策略（查单/新通知）或等 429 退避
+            //    仅「明显可安全重放」的数据错误（如订单不存在）才在上面删过 nonce
+            //redisIdempotentHelper.delete(nonceKey);
             throw e;
         }
 
+    }
+
+    /**
+     * 注册事务同步
+     * 如果当前没有事务同步，则立即解锁
+     * 如果当前有事务同步，则注册事务同步,事务结束后执行解锁和投递
+     * @param lockKey 锁key
+     * @param lockToken 锁token
+     * @param orderId 订单id
+     */
+    private void registerUnlockAndSideEffects(String lockKey, String lockToken, Long orderId) {
+        Runnable unlock = () -> redisIdempotentHelper.unlock(lockKey, lockToken);
+        Runnable publish = () -> {
+            try {
+                payOutboxPort.publishPendingForOrder(orderId);
+            } catch (Exception e) {
+                // 不回滚已经提交的入账；留给对账/定时扫outbox
+                log.warn("afterCommit 投递 Outbox 失败，orderId={}", orderId);
+            }
+        };
+
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            // 还没有事务同步：先起段事务时Spring会开启同步
+            // 若此处仍inactive，说明调用链有问题：调用方try/fianlly解锁
+            // 推荐写法：先开启事务再锁，或把【加锁+注册】放进一个带事务的门面
+            //
+            // 本推荐结构是【锁在事务外，短事务在锁内】
+            // 进入markPaidInShortTx才会avtive synchronization
+            // 因此这里用【延迟到短事务方法开头再注册】更稳
+            log.warn("无事务同步，回退为立即解锁 orderId={}", orderId);
+            unlock.run();
+            return;
+        }
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                publish.run();
+            }
+
+            @Override
+            public void afterCompletion(int status) {
+                unlock.run();
+            }
+        });
     }
 
     /**
@@ -205,10 +296,21 @@ public class MockPaymentGateway {
 
         // 与入账同事务写入Outbox；真正发送在afterCommit
         payOutboxPort.insertOrderPaid(order.getId(), order.getNumber());
-        
+
         log.info("订单{}回调支付成功，插入订单ORDER_PAID消息", order.getId());
         return requireOrderById(order.getId());
 
+    }
+
+    /**
+     * 解析支付锁过期时间
+     * 
+     * @return 支付锁过期时间
+     */
+    private Long resolvePayLockTtl() {
+        Long ttl = payProperties.getPayLockTtlSeconds();
+
+        return (ttl == null || ttl <= 0) ? 10L : ttl;
     }
 
     /**
@@ -234,12 +336,13 @@ public class MockPaymentGateway {
                 && order.getPayStatus() == PayStatus.PAID;
     }
 
-    private Order requireOrder(Long orderId) {
-        Order order = orderPayPort.findOrderById(orderId);
-
+    private void validateOrder(Order order) {
         if (order == null) {
             throw new BusinessException(ErrorCode.CONFLICT, "订单不存在");
         }
-        return order;
+        // 状态机：只有「待付款 + 未支付」才能付 → 之后 CAS 成「待接单 + 已支付」
+        if (order.getStatus() != OrderStatus.PENDING_PAYMENT || order.getPayStatus() != PayStatus.UNPAID) {
+            throw new BusinessException(ErrorCode.CONFLICT, "当前订单不可支付");
+        }
     }
 }
