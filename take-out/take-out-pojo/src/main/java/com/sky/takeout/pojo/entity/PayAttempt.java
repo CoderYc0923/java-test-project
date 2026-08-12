@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.sky.takeout.pojo.enums.PayAttemptStatus;
 
 import lombok.Data;
 
@@ -24,7 +25,8 @@ public class PayAttempt {
 
     private String channel;
 
-    private String status;
+    /** 库中存枚举 code（VARCHAR），读写由 {@link PayAttemptStatus} 的 @EnumValue 完成 */
+    private PayAttemptStatus status;
 
     private BigDecimal amount;
 

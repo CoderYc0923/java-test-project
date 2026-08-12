@@ -167,18 +167,50 @@ CREATE TABLE IF NOT EXISTS pay_attempt (
 
 ### 5.2 枚举
 
+库字段 `pay_attempt.status` 为 **VARCHAR**，存字符串 code。实体字段类型用枚举，靠 `@EnumValue` 映射（与 `PayStatus` 同模式，只是 code 是 String 不是 Integer）。
+
 ```java
 package com.sky.takeout.pojo.enums;
 
-/** 支付尝试状态 */
+import com.baomidou.mybatisplus.annotation.EnumValue;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+import lombok.Getter;
+
+@Getter
 public enum PayAttemptStatus {
-    PAYING,
-    SUCCESS,
-    CLOSED,
-    REFUNDING,
-    REFUNDED
+    PAYING("PAYING", "支付中"),
+    SUCCESS("SUCCESS", "支付成功"),
+    CLOSED("CLOSED", "已关闭"),
+    REFUNDING("REFUNDING", "退款中"),
+    REFUNDED("REFUNDED", "已退款");
+
+    @EnumValue
+    @JsonValue
+    private final String code;
+    private final String message;
+
+    PayAttemptStatus(String code, String message) {
+        this.code = code;
+        this.message = message;
+    }
+
+    @JsonCreator
+    public static PayAttemptStatus fromCode(String code) {
+        if (code == null || code.isBlank()) {
+            return null;
+        }
+        for (PayAttemptStatus status : values()) {
+            if (status.code.equals(code)) {
+                return status;
+            }
+        }
+        throw new IllegalArgumentException("Invalid pay attempt status code: " + code);
+    }
 }
 ```
+
+实体：`private PayAttemptStatus status;` → `getStatus()` 返回枚举，比较用 `== PayAttemptStatus.PAYING`。
 
 ---
 
@@ -799,59 +831,298 @@ public class PayNotifyTxService {
 
 ---
 
-### 8.6 PayAttemptPort 实现要点（system）
+### 8.6 PayAttemptPortImpl 完整实现（system，手抄稿）
+
+> 路径：`take-out-system/.../pay/PayAttemptPortImpl.java`  
+> 风格对齐 `OrderPayPortImpl`：只注入 Mapper，状态更新带「期望旧状态」条件。  
+> **本小节仅为设计对照，请自行手写到工程，勿让助手直接改实现类。**
 
 ```java
+package com.sky.takeout.system.pay;
+
+import java.util.Collections;
+import java.util.List;
+
+import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.sky.takeout.pay.port.PayAttemptPort;
+import com.sky.takeout.pojo.entity.PayAttempt;
+import com.sky.takeout.pojo.enums.PayAttemptStatus;
+import com.sky.takeout.system.mapper.PayAttemptMapper;
+
+/**
+ * 支付尝试端口实现（system 侧）。
+ * <p>
+ * pay 模块只依赖 {@link PayAttemptPort}，不直接碰 Mapper；
+ * 所有对 {@code pay_attempt} 表的读写都收敛在这里。
+ * <p>
+ * 与订单入账类似：状态变更尽量带「期望旧状态」条件（CAS 思想），
+ * 避免并发下把别人已经改过的行又改回去。
+ */
 @Component
 public class PayAttemptPortImpl implements PayAttemptPort {
 
-    private final PayAttemptMapper mapper;
+    private final PayAttemptMapper payAttemptMapper;
 
+    public PayAttemptPortImpl(PayAttemptMapper payAttemptMapper) {
+        this.payAttemptMapper = payAttemptMapper;
+    }
+
+    /**
+     * 按渠道商户单号查一条支付尝试。
+     * <p>
+     * 回调里 {@code MockPayNotifyDTO.orderNumber} 语义就是 {@code out_trade_no}，
+     * 必须用本方法定位到 attempt，再拿到业务 {@code orderId}。
+     * <p>
+     * SQL 等价：
+     * {@code SELECT * FROM pay_attempt WHERE out_trade_no = ? LIMIT 1}
+     */
+    @Override
+    public PayAttempt findByOutTradeNo(String outTradeNo) {
+        if (!StringUtils.hasText(outTradeNo)) {
+            return null;
+        }
+        return payAttemptMapper.selectOne(new LambdaQueryWrapper<PayAttempt>()
+                .eq(PayAttempt::getOutTradeNo, outTradeNo)
+                .last("LIMIT 1"));
+    }
+
+    /**
+     * 查某业务单当前「进行中」的支付尝试（同一时刻最多一条）。
+     * <p>
+     * 依赖表约束 {@code uk_order_paying(order_id, paying_flag)}：
+     * 只有 PAYING 时 {@code paying_flag = 1}，其它状态为 NULL。
+     * {@code requestPay} 复用逻辑会先调本方法。
+     * <p>
+     * SQL 等价：
+     * {@code SELECT * FROM pay_attempt WHERE order_id = ? AND status = 'PAYING' LIMIT 1}
+     */
     @Override
     public PayAttempt findPayingByOrderId(Long orderId) {
-        return mapper.selectOne(new LambdaQueryWrapper<PayAttempt>()
+        if (orderId == null) {
+            return null;
+        }
+        return payAttemptMapper.selectOne(new LambdaQueryWrapper<PayAttempt>()
                 .eq(PayAttempt::getOrderId, orderId)
                 .eq(PayAttempt::getStatus, PayAttemptStatus.PAYING)
                 .last("LIMIT 1"));
     }
 
+    /**
+     * 列出某业务单下全部支付尝试（含历史 CLOSED / SUCCESS / REFUNDED）。
+     * <p>
+     * 入账成功后 {@code closeOtherUnpaidAttempts} 会用来遍历并关渠道未付单。
+     * 无结果返回空列表，避免调用方 NPE。
+     */
     @Override
-    public int insertPaying(PayAttempt attempt) {
-        // status=PAYING, paying_flag=1；并发第二插会撞 uk_order_paying
-        return mapper.insert(attempt);
+    public List<PayAttempt> listByOrderId(Long orderId) {
+        if (orderId == null) {
+            return Collections.emptyList();
+        }
+        List<PayAttempt> list = payAttemptMapper.selectList(new LambdaQueryWrapper<PayAttempt>()
+                .eq(PayAttempt::getOrderId, orderId)
+                .orderByAsc(PayAttempt::getId));
+        return list == null ? Collections.emptyList() : list;
     }
 
+    /**
+     * 插入一条「进行中」支付尝试。
+     * <p>
+     * 调用方应已填好 orderId / orderNumber / outTradeNo / amount 等；
+     * 这里再强制校正 status=PAYING、payingFlag=1，防止漏填导致唯一约束失效。
+     * <p>
+     * 若同单已有 PAYING（paying_flag=1），会触发
+     * {@code DuplicateKeyException}（uk_order_paying），由网关捕获后走「复用」分支。
+     *
+     * @return 影响行数，正常为 1
+     */
     @Override
-    public int updateStatus(Long id, PayAttemptStatus from, PayAttemptStatus to, Integer payingFlag) {
-        PayAttempt patch = new PayAttempt();
-        patch.setStatus(to);
-        patch.setPayingFlag(payingFlag); // SUCCESS/CLOSED/REFUND* 一律 null
-        return mapper.update(patch, new LambdaQueryWrapper<PayAttempt>()
+    public int insertPaying(PayAttempt payAttempt) {
+        if (payAttempt == null) {
+            return 0;
+        }
+        // 兜底：保证「进行中」语义与唯一约束字段一致
+        payAttempt.setStatus(PayAttemptStatus.PAYING);
+        payAttempt.setPayingFlag(1);
+        return payAttemptMapper.insert(payAttempt);
+    }
+
+    /**
+     * 带期望旧状态的状态迁移（CAS）。
+     * <p>
+     * 只有当前库中 {@code status == statusFrom} 时才更新为 {@code statusTo}，
+     * 并写入新的 {@code payingFlag}（离开 PAYING 时传 null，释放「进行中」坑位）。
+     * <p>
+     * 典型用法：
+     * <ul>
+     *   <li>PAYING → SUCCESS，payingFlag=null（入账成功）</li>
+     *   <li>PAYING → CLOSED，payingFlag=null（关单）</li>
+     *   <li>任意未终态 → REFUNDING，再 REFUNDING → REFUNDED</li>
+     * </ul>
+     * <p>
+     * 注意：payingFlag 为 null 时也必须写进 UPDATE。
+     * 用实体 {@code setPayingFlag(null)} + {@code update(entity, wrapper)} 时，
+     * MyBatis-Plus 默认常会跳过 null 字段，因此这里用 {@link LambdaUpdateWrapper#set}。
+     * <p>
+     * SQL 等价：
+     * {@code UPDATE pay_attempt SET status=?, paying_flag=? WHERE id=? AND status=?}
+     *
+     * @return 影响行数：1=成功；0=状态已变 / 行不存在
+     */
+    @Override
+    public int updateStatus(Long id, PayAttemptStatus statusFrom, PayAttemptStatus statusTo,
+            Integer payingFlag) {
+        if (id == null || statusFrom == null || statusTo == null) {
+            return 0;
+        }
+
+        LambdaUpdateWrapper<PayAttempt> wrapper = new LambdaUpdateWrapper<PayAttempt>()
                 .eq(PayAttempt::getId, id)
-                .eq(PayAttempt::getStatus, from));
+                .eq(PayAttempt::getStatus, statusFrom)
+                .set(PayAttempt::getStatus, statusTo)
+                .set(PayAttempt::getPayingFlag, payingFlag);
+
+        return payAttemptMapper.update(null, wrapper);
+    }
+
+    /**
+     * 写回假微信返回的 prepay_id（不影响状态机）。
+     * <p>
+     * native 下单成功后调用；仅按主键更新，不校验 status
+     * （复用 PAYING 单时也会再次拿到 prepayId）。
+     */
+    @Override
+    public int updatePrepayId(Long id, String prepayId) {
+        if (id == null || !StringUtils.hasText(prepayId)) {
+            return 0;
+        }
+        return payAttemptMapper.update(null, new LambdaUpdateWrapper<PayAttempt>()
+                .eq(PayAttempt::getId, id)
+                .set(PayAttempt::getPrepayId, prepayId));
     }
 }
 ```
 
 ---
 
-### 8.7 前端确认页（必改一行）
+### 8.7 前端确认页 + OrderMockVO（必改）
 
-现状大致：
+#### 问题
 
-```text
-/mock/pay/checkout?out_trade_no={order.number}
-```
-
-改为支付接口返回或再次查询得到的：
+现状前端大致用 **业务单号** 打开确认页：
 
 ```text
-/mock/pay/checkout?out_trade_no={payAttempt.outTradeNo}
+/mock/pay/checkout?out_trade_no={order.number}   // ❌ 错误
 ```
 
-否则用户付的是旧号，和 attempt 对不上。
+改造后渠道单号是 **支付尝试** 的 `outTradeNo`（如 `ORD...-A1739...`），再用 `order.number` 会对不上 `pay_attempt`，回调也找不到 attempt。
 
-建议 `OrderMockVO` 增加字段：`outTradeNo`、`checkoutUrl`（requestPay 后写入）。
+正确 URL：
+
+```text
+/mock/pay/checkout?out_trade_no={payAttempt.outTradeNo}   // ✅
+```
+
+#### OrderMockVO 增加字段
+
+`take-out-pojo/.../vo/order/OrderMockVO.java`：
+
+```java
+@Data
+public final class OrderMockVO {
+
+    @Schema(description = "订单 id")
+    private Long id;
+
+    @Schema(description = "业务订单号 ORD...")
+    private String number;
+
+    @Schema(description = "实付金额")
+    private BigDecimal amount;
+
+    /** requestPay / 复用 PAYING 后写入：渠道商户单号 */
+    @Schema(description = "当前支付尝试的 out_trade_no；未发起支付时可为 null")
+    private String outTradeNo;
+
+    /** requestPay 后写入：假微信确认页完整 URL，前端可直接 window.open */
+    @Schema(description = "假微信收银台 URL")
+    private String checkoutUrl;
+}
+```
+
+#### 后端如何写入（requestPay 之后）
+
+思路：`mockPay` 仍返回 `OrderMockVO`，但 **不能再** 只用 `BeanUtils.copyProperties(order, vo)`——`outTradeNo` / `checkoutUrl` 不在 `Order` 上。
+
+建议拆一个组装方法（手抄示意）：
+
+```java
+// OrderServiceImpl.mockPay
+@Override
+public OrderMockVO mockPay(Long id) {
+    Order order = mockPaymentGateway.requestPay(id);
+    // 发起/复用后，库中应有一条 PAYING（或刚建好的）attempt
+    PayAttempt paying = payAttemptPort.findPayingByOrderId(id);
+    return toMockVO(order, paying);
+}
+
+private OrderMockVO toMockVO(Order order) {
+    return toMockVO(order, null);
+}
+
+private OrderMockVO toMockVO(Order order, PayAttempt paying) {
+    OrderMockVO vo = new OrderMockVO();
+    BeanUtils.copyProperties(order, vo);
+
+    if (paying != null && StringUtils.hasText(paying.getOutTradeNo())) {
+        vo.setOutTradeNo(paying.getOutTradeNo());
+        // base 来自 pay.mock-wechat-base-url，去掉末尾 /
+        String base = trimTrailingSlash(payProperties.getMockWechatBaseUrl());
+        vo.setCheckoutUrl(base + "/mock/pay/checkout?out_trade_no="
+                + URLEncoder.encode(paying.getOutTradeNo(), StandardCharsets.UTF_8));
+    }
+    return vo;
+}
+```
+
+可选增强（网关更干净）：让 `requestPay` 返回 `(Order, outTradeNo)` 或在 `OrderMockVO` 专用装配放在 admin/system 一层查 `findPayingByOrderId`，**不要**把 VO 拼装塞进 `MockPaymentGateway`。
+
+`mock` 下单、`mockPayNotify` 回调返回时：`outTradeNo` / `checkoutUrl` 可为 null（前端不用打开收银台）。
+
+#### 前端 mockPay.vue
+
+现状（错误回退到业务单号）：
+
+```ts
+const outTradeNo = (data.data && data.data.number) || row.number
+const checkoutUrl = this.openWechatCheckout(String(outTradeNo))
+```
+
+改为优先用接口返回值：
+
+```ts
+const payload = data.data || {}
+// 优先后端拼好的 URL；否则用 outTradeNo 本地拼
+if (payload.checkoutUrl) {
+  window.open(payload.checkoutUrl, '_blank', 'width=440,height=720')
+} else if (payload.outTradeNo) {
+  this.openWechatCheckout(String(payload.outTradeNo))
+} else {
+  this.$message.error('未返回 outTradeNo，无法打开确认页')
+  return
+}
+```
+
+`openWechatCheckout` 可保留作兜底；**禁止**再 fallback 到 `row.number`。
+
+#### 验收
+
+1. `PUT /admin/order/mockPay/{id}` 响应 `data.outTradeNo` 形如 `ORD...-A...`，不是纯 `ORD...`  
+2. `data.checkoutUrl` 含该 `out_trade_no`  
+3. 打开确认页能查到假微信 NOTPAY 单；确认后回调能命中同一 `pay_attempt`  
 
 ---
 

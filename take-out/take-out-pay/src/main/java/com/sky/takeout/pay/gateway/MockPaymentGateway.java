@@ -3,6 +3,7 @@ package com.sky.takeout.pay.gateway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -131,11 +132,24 @@ public class MockPaymentGateway {
             createPayAttempt.setAmount(order.getAmount());
             createPayAttempt.setPayingFlag(1);
 
+            try {
+                payAttemptPort.insertPaying(createPayAttempt);
+            } catch (DuplicateKeyException e) {
+                // 并发下唯一约束：别人先插入了PAYING 就复用
+                PayAttempt raced = payAttemptPort.findPayingByOrderId(orderId);
+                if (raced == null) {
+                    throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "支付发起冲突，请重试");
+                }
+
+                mockWechatHttpClient.createNativePay(order, raced.getOutTradeNo());
+                return order;
+            }
 
             // 调用微信支付
-            TransactionResponse response = mockWechatHttpClient.createNativePay(order);
+            TransactionResponse response = mockWechatHttpClient.createNativePay(order, outTradeNo);
+            payAttemptPort.updatePrepayId(createPayAttempt.getId(), response.getPrepayId());
 
-            log.info("用户请求微信支付 orderId={} number={} prepayId={}", orderId, order.getNumber(), response.getPrepayId());
+            log.info("新建支付单 orderId={} number={} prepayId={}", orderId, order.getNumber(), response.getPrepayId());
             return order;
         } finally {
             // 下单HTTP与DB入账无关：这里用普通的finally即可，不必afterCommit
@@ -170,22 +184,29 @@ public class MockPaymentGateway {
         if (!firstNonce) {
             // 见过这条通知：已付 → 对渠道成功；未付 → 可能仍在处理 / 上次失败，让渠道稍后重试
             log.info("回调 nonce 重复，orderNumber={} nonce={}", dto.getOrderNumber(), dto.getNonce());
-            Order existed = orderPayPort.findOrderByNumber(dto.getOrderNumber());
+
+            PayAttempt existedPayAttempt = payAttemptPort.findByOutTradeNo(dto.getOrderNumber());
+            if (existedPayAttempt == null) {
+                throw new BusinessException(ErrorCode.CONFLICT, "支付单不存在");
+            }
+
+            Order existed = orderPayPort.findOrderById(existedPayAttempt.getOrderId());
             if (existed == null) {
                 throw new BusinessException(ErrorCode.CONFLICT, "订单不存在");
             }
-            // 仅当库已是已支付时，才对渠道宣称成功；否则让渠道带新请求/重试更安全
-            if (!isPaid(existed)) {
-                throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "支付处理中，请稍后重试");
+
+            // 已付或者本尝试已退款完成：对渠道成功；否则让渠道稍后重试
+            if (isPaid(existed) || existedPayAttempt.getStatus() == PayAttemptStatus.REFUNDED
+                    || existedPayAttempt.getStatus() == PayAttemptStatus.SUCCESS) {
+                return existed;
             }
-            return existed;
+            throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "支付处理中，请稍后重试");
         }
 
-        Order previewOrder = orderPayPort.findOrderByNumber(dto.getOrderNumber());
-        if (previewOrder == null) {
-            // 占用了nonce但单不存在：可删nonce以便修数据后重试，生产常留坑 + 告警
-            redisIdempotentHelper.delete(nonceKey);  // 唯一建议删 nonce 的情况：单根本不存在，允许修好后再用同通知试
-            throw new BusinessException(ErrorCode.CONFLICT, "订单不存在");
+        PayAttempt payAttempt = payAttemptPort.findByOutTradeNo(dto.getOrderNumber());
+        if (payAttempt == null) {
+            redisIdempotentHelper.delete(nonceKey);
+            throw new BusinessException(ErrorCode.CONFLICT, "支付单不存在");
         }
 
         /**
@@ -193,14 +214,14 @@ public class MockPaymentGateway {
          * 例子：1.微信几乎同时推了两次notify或重试叠上 2.多实例部署时，两个节点同时收到同单回调
          * 
          */
-        String lockKey = PAY_LOCK_PREFIX + previewOrder.getId();
+        String lockKey = PAY_LOCK_PREFIX + payAttempt.getOrderId();
         String lockToken = redisIdempotentHelper.tryLock(lockKey, resolvePayLockTtl());
         if (lockToken == null) {
             throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "支付处理中，请稍后重试");
         }
 
         try {
-            return payNotifyTxService.markPaidInShrotTx(dto, lockKey, lockToken);
+            return payNotifyTxService.markPaidOrRufundInShortTx(dto, payAttempt.getId(), lockKey,lockToken);
         } catch (RuntimeException e) {
              // 若短事务根本没开起来就失败，Synchronization 可能没注册 → 这里兜底解锁
             // 正常路径：TxService 第一行已注册 afterCompletion，这里再 unlock 会因 token 校验变 no-op 或解两次需幂等

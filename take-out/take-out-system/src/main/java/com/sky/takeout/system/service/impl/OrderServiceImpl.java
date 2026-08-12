@@ -24,6 +24,7 @@ import com.sky.takeout.common.exception.BusinessException;
 import com.sky.takeout.common.result.ErrorCode;
 import com.sky.takeout.pay.config.PayProperties;
 import com.sky.takeout.pay.gateway.MockPaymentGateway;
+import com.sky.takeout.pay.port.PayAttemptPort;
 import com.sky.takeout.pay.redis.RedisIdempotentHelper;
 import com.sky.takeout.pojo.dto.order.MockPayNotifyDTO;
 import com.sky.takeout.pojo.dto.order.OrderCancelDTO;
@@ -43,6 +44,7 @@ import lombok.Data;
 import com.sky.takeout.pojo.entity.Dish;
 import com.sky.takeout.pojo.entity.Order;
 import com.sky.takeout.pojo.entity.OrderDetail;
+import com.sky.takeout.pojo.entity.PayAttempt;
 import com.sky.takeout.pojo.entity.Setmeal;
 import com.sky.takeout.pojo.enums.OrderStatus;
 import com.sky.takeout.pojo.enums.PayStatus;
@@ -76,6 +78,7 @@ public class OrderServiceImpl implements OrderService {
     private final MockPaymentGateway mockPaymentGateway;
     private final RedisIdempotentHelper redisIdempotentHelper;
     private final PayProperties payProperties;
+    private final PayAttemptPort payAttemptPort;
 
     /** 防连点下单：order:idempotent:{requestId} */
     private static final String IDEMPOTENT_KEY_PREFIX = "order:idempotent:";
@@ -89,7 +92,7 @@ public class OrderServiceImpl implements OrderService {
 
     public OrderServiceImpl(OrderMapper orderMapper, OrderDetailMapper orderDetailMapper, DishMapper dishMapper,
             SetmealMapper setmealMapper, MockPaymentGateway mockPaymentGateway,
-            RedisIdempotentHelper redisIdempotentHelper, PayProperties payProperties) {
+            RedisIdempotentHelper redisIdempotentHelper, PayProperties payProperties, PayAttemptPort payAttemptPort) {
         this.orderMapper = orderMapper;
         this.orderDetailMapper = orderDetailMapper;
         this.dishMapper = dishMapper;
@@ -97,6 +100,7 @@ public class OrderServiceImpl implements OrderService {
         this.mockPaymentGateway = mockPaymentGateway;
         this.redisIdempotentHelper = redisIdempotentHelper;
         this.payProperties = payProperties;
+        this.payAttemptPort = payAttemptPort;
     }
 
     @Override
@@ -334,16 +338,18 @@ public class OrderServiceImpl implements OrderService {
 
     /**
      * 模拟支付
-     * 调用支付网关进行支付
+     * 调用支付网关进行支付；返回带 outTradeNo / checkoutUrl，供前端打开确认页
      */
     @Override
     public OrderMockVO mockPay(Long id) {
-        return toMockVO(mockPaymentGateway.requestPay(id));
+        Order order = mockPaymentGateway.requestPay(id);
+        PayAttempt paying = payAttemptPort.findPayingByOrderId(id);
+        return toMockVO(order, paying);
     }
 
     @Override
     public OrderMockVO mockPayNotify(MockPayNotifyDTO dto) {
-        return toMockVO(mockPaymentGateway.handlePayNotify(dto));
+        return toMockVO(mockPaymentGateway.handlePayNotify(dto), null);
     }
 
     private OrderMockVO doMockCreate(OrderMockDTO mockDTO) {
@@ -459,10 +465,35 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private OrderMockVO toMockVO(Order order) {
-        OrderMockVO vo = new OrderMockVO();
+        return toMockVO(order, null);
+    }
 
+    /**
+     * 组装模拟下单/支付 VO。
+     * {@code paying} 非空时写入渠道单号与假微信确认页 URL（requestPay 后）。
+     */
+    private OrderMockVO toMockVO(Order order, PayAttempt paying) {
+        OrderMockVO vo = new OrderMockVO();
         BeanUtils.copyProperties(order, vo);
+
+        if (paying != null && StringUtils.hasText(paying.getOutTradeNo())) {
+            String outTradeNo = paying.getOutTradeNo();
+            vo.setOutTradeNo(outTradeNo);
+            String base = trimTrailingSlash(payProperties.getMockWechatBaseUrl());
+            vo.setCheckoutUrl(base + "/mock/pay/checkout?out_trade_no=" + urlEncode(outTradeNo));
+        }
         return vo;
+    }
+
+    private static String trimTrailingSlash(String url) {
+        if (!StringUtils.hasText(url)) {
+            return "http://127.0.0.1:9090";
+        }
+        return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
+    }
+
+    private static String urlEncode(String value) {
+        return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
     }
 
     /** id 非空由 DTO @NotNull 或路径参数保证；这里只查库做业务校验 */

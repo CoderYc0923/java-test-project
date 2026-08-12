@@ -240,9 +240,21 @@ export default class extends Vue {
         return
       }
 
-      const outTradeNo =
-        (data.data && data.data.number) || row.number
-      const checkoutUrl = this.openWechatCheckout(String(outTradeNo))
+      const payload = (data && data.data) || {}
+      let checkoutUrl = payload.checkoutUrl as string | undefined
+      if (checkoutUrl) {
+        const win = window.open(checkoutUrl, '_blank', 'width=440,height=720')
+        if (!win) {
+          this.$message.warning(
+            '浏览器拦截了弹窗，请允许弹窗后重试，或手动打开：' + checkoutUrl
+          )
+        }
+      } else if (payload.outTradeNo) {
+        checkoutUrl = this.openWechatCheckout(String(payload.outTradeNo))
+      } else {
+        this.$message.error('未返回 outTradeNo，无法打开确认页（请确认后端已写入支付尝试）')
+        return
+      }
       this.$message.success(
         '已下单到假微信，请在确认页完成支付（若无弹窗请打开：' +
           checkoutUrl +
