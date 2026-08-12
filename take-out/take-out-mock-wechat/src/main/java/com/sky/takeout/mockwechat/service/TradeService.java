@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -22,6 +24,8 @@ import com.sky.takeout.mockwechat.store.TradeStore;
 @Service
 public class TradeService {
 
+    private static final Logger log = LoggerFactory.getLogger(TradeService.class);
+
     private final TradeStore tradeStore;
     private final MerchantNotifyClient merchantNotifyClient;
     @SuppressWarnings("unused")
@@ -38,11 +42,18 @@ public class TradeService {
     public TransactionResponse createNative(NativePayRequest request) {
         return tradeStore.findByOutTradeNo(request.getOutTradeNo())
                 .map(existing -> {
-                    if (existing.getTradeState() == TradeState.SUCCESS) {
+                    if (existing.getTradeState() == TradeState.SUCCESS
+                            || existing.getTradeState() == TradeState.REFUND) {
                         throw new MockWechatException(
                                 HttpStatus.CONFLICT,
                                 "ORDER_PAID",
-                                "out_trade_no already paid");
+                                "out_trade_no already paid or refunded");
+                    }
+                    if (existing.getTradeState() == TradeState.CLOSED) {
+                        throw new MockWechatException(
+                                HttpStatus.CONFLICT,
+                                "ORDER_CLOSED",
+                                "out_trade_no already closed; use a new out_trade_no");
                     }
                     // NOTPAY: idempotent return
                     return toResponse(existing);
@@ -64,12 +75,56 @@ public class TradeService {
     }
 
     public TransactionResponse queryByOutTradeNo(String outTradeNo) {
-        Trade trade = tradeStore.findByOutTradeNo(outTradeNo)
-                .orElseThrow(() -> new MockWechatException(
-                        HttpStatus.NOT_FOUND,
-                        "ORDER_NOT_FOUND",
-                        "out_trade_no not found"));
+        Trade trade = requireTrade(outTradeNo);
         return toResponse(trade);
+    }
+
+    /**
+     * 关单：仅 NOTPAY → CLOSED；已 CLOSED 幂等；SUCCESS/REFUND → 409。
+     */
+    public TransactionResponse close(String outTradeNo) {
+        Object lock = confirmLocks.computeIfAbsent(outTradeNo, k -> new Object());
+        synchronized (lock) {
+            Trade trade = requireTrade(outTradeNo);
+            if (trade.getTradeState() == TradeState.CLOSED) {
+                return toResponse(trade);
+            }
+            if (trade.getTradeState() == TradeState.SUCCESS
+                    || trade.getTradeState() == TradeState.REFUND) {
+                throw new MockWechatException(
+                        HttpStatus.CONFLICT,
+                        "ORDER_PAID",
+                        "cannot close paid/refunded trade");
+            }
+            trade.setTradeState(TradeState.CLOSED);
+            tradeStore.save(trade);
+            log.info("close trade outTradeNo={}", outTradeNo);
+            return toResponse(trade);
+        }
+    }
+
+    /**
+     * 退款：仅 SUCCESS → REFUND；已 REFUND 幂等；其它状态 → 409。
+     */
+    public TransactionResponse refund(String outTradeNo, String reason) {
+        Object lock = confirmLocks.computeIfAbsent(outTradeNo, k -> new Object());
+        synchronized (lock) {
+            Trade trade = requireTrade(outTradeNo);
+            if (trade.getTradeState() == TradeState.REFUND) {
+                return toResponse(trade);
+            }
+            if (trade.getTradeState() != TradeState.SUCCESS) {
+                throw new MockWechatException(
+                        HttpStatus.CONFLICT,
+                        "NOT_SUCCESS",
+                        "only SUCCESS can refund");
+            }
+            trade.setTradeState(TradeState.REFUND);
+            tradeStore.save(trade);
+            log.info("refund trade outTradeNo={} reason={}", outTradeNo,
+                    StringUtils.hasText(reason) ? reason : "duplicate_pay");
+            return toResponse(trade);
+        }
     }
 
     public ConfirmResponse confirm(ConfirmRequest request) {
@@ -81,15 +136,24 @@ public class TradeService {
         Trade toNotify = null;
 
         synchronized (lock) {
-            Trade trade = tradeStore.findByOutTradeNo(outTradeNo)
-                    .orElseThrow(() -> new MockWechatException(
-                            HttpStatus.NOT_FOUND,
-                            "ORDER_NOT_FOUND",
-                            "out_trade_no not found"));
+            Trade trade = requireTrade(outTradeNo);
 
             if (trade.getTradeState() == TradeState.SUCCESS) {
                 // Spec: already SUCCESS — do not POST notify again
                 return toConfirmResponse(trade);
+            }
+
+            if (trade.getTradeState() == TradeState.CLOSED) {
+                throw new MockWechatException(
+                        HttpStatus.CONFLICT,
+                        "ORDER_CLOSED",
+                        "trade closed");
+            }
+            if (trade.getTradeState() == TradeState.REFUND) {
+                throw new MockWechatException(
+                        HttpStatus.CONFLICT,
+                        "ORDER_REFUNDED",
+                        "trade already refunded");
             }
 
             if (!StringUtils.hasText(trade.getNotifyUrl())) {
@@ -116,6 +180,14 @@ public class TradeService {
             }
         }
         return toConfirmResponse(toNotify);
+    }
+
+    private Trade requireTrade(String outTradeNo) {
+        return tradeStore.findByOutTradeNo(outTradeNo)
+                .orElseThrow(() -> new MockWechatException(
+                        HttpStatus.NOT_FOUND,
+                        "ORDER_NOT_FOUND",
+                        "out_trade_no not found"));
     }
 
     private static ConfirmResponse toConfirmResponse(Trade trade) {

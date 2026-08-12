@@ -124,6 +124,51 @@ public class MockWechatHttpClient {
     }
 
     /**
+     * 关单：渠道 NOTPAY → CLOSED。
+     * POST /v3/pay/transactions/out-trade-no/{outTradeNo}/close
+     */
+    public TransactionResponse close(String outTradeNo) {
+        if (!StringUtils.hasText(outTradeNo)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "outTradeNo 不能为空");
+        }
+        try {
+            return restClient.post()
+                    .uri("/v3/pay/transactions/out-trade-no/{outTradeNo}/close", outTradeNo)
+                    .retrieve()
+                    .body(TransactionResponse.class);
+        } catch (RestClientResponseException e) {
+            log.warn("关单失败 outTradeNo={} status={} body={}",
+                    outTradeNo, e.getStatusCode().value(), e.getResponseBodyAsString());
+            throw new BusinessException(ErrorCode.ERROR,
+                    "假微信关单失败: HTTP " + e.getStatusCode().value());
+        }
+    }
+
+    /**
+     * 退款（教学简化）：渠道 SUCCESS → REFUND。
+     * POST /v3/pay/transactions/out-trade-no/{outTradeNo}/refund
+     */
+    public TransactionResponse refund(String outTradeNo, String reason) {
+        if (!StringUtils.hasText(outTradeNo)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "outTradeNo 不能为空");
+        }
+        String r = StringUtils.hasText(reason) ? reason : "duplicate_pay";
+        try {
+            return restClient.post()
+                    .uri("/v3/pay/transactions/out-trade-no/{outTradeNo}/refund", outTradeNo)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(java.util.Map.of("reason", r))
+                    .retrieve()
+                    .body(TransactionResponse.class);
+        } catch (RestClientResponseException e) {
+            log.warn("退款失败 outTradeNo={} status={} body={}",
+                    outTradeNo, e.getStatusCode().value(), e.getResponseBodyAsString());
+            throw new BusinessException(ErrorCode.ERROR,
+                    "假微信退款失败: HTTP " + e.getStatusCode().value());
+        }
+    }
+
+    /**
      * 去除 URL 末尾的斜杠
      * @param url
      * @return

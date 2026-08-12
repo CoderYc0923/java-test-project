@@ -42,6 +42,8 @@
 |----|------|
 | `NOTPAY` | 未支付 |
 | `SUCCESS` | 支付成功 |
+| `CLOSED` | 已关单（未付关闭） |
+| `REFUND` | 已退款（教学整单退） |
 
 内存存储，进程重启后交易清空。
 
@@ -59,8 +61,11 @@
 | HTTP | 典型 code | 场景 |
 |------|-----------|------|
 | 400 | `NOTIFY_URL_BLANK` | confirm 时 notify_url 为空 |
-| 404 | `ORDER_NOT_FOUND` | 查单 / confirm 订单不存在 |
-| 409 | `ORDER_PAID` | 已支付订单再次统一下单 |
+| 404 | `ORDER_NOT_FOUND` | 查单 / confirm / close / refund 订单不存在 |
+| 409 | `ORDER_PAID` | 已支付订单再次统一下单；或对已付/已退单关单 |
+| 409 | `ORDER_CLOSED` | 已关单再下单 / confirm |
+| 409 | `ORDER_REFUNDED` | 已退款再 confirm |
+| 409 | `NOT_SUCCESS` | 非 SUCCESS 状态退款 |
 | 400 | （校验失败） | 缺必填字段时可能为框架默认校验响应 |
 
 ---
@@ -208,9 +213,67 @@ Content-Type: application/json
 
 1. 订单不存在 → **404** `ORDER_NOT_FOUND`  
 2. 已是 `SUCCESS` → **幂等成功**，**不再**向商户发送通知  
-3. `NOTPAY` → 置为 `SUCCESS`，再对下单时的 `notify_url` 发起 HTTP POST（见 §5）  
-4. `notify_url` 为空 → **400** `NOTIFY_URL_BLANK`  
-5. 回调失败（非 2xx / 网络错误）：渠道侧仍保持 `SUCCESS`（简化对账）；按配置重试后记日志  
+3. 已是 `CLOSED` → **409** `ORDER_CLOSED`（关单后旧确认页不可再付）  
+4. 已是 `REFUND` → **409** `ORDER_REFUNDED`  
+5. `NOTPAY` → 置为 `SUCCESS`，再对下单时的 `notify_url` 发起 HTTP POST（见 §5）  
+6. `notify_url` 为空 → **400** `NOTIFY_URL_BLANK`  
+7. 回调失败（非 2xx / 网络错误）：渠道侧仍保持 `SUCCESS`（简化对账）；按配置重试后记日志  
+
+---
+
+## 4.1 关单
+
+模拟商户关闭未支付订单。
+
+### 基本信息
+
+| 项 | 值 |
+|----|-----|
+| Method | `POST` |
+| Path | `/v3/pay/transactions/out-trade-no/{out_trade_no}/close` |
+| 成功状态码 | `200` |
+
+### 行为
+
+| 当前状态 | 结果 |
+|----------|------|
+| `NOTPAY` | → `CLOSED`，返回交易体 |
+| `CLOSED` | 幂等 OK，仍返回 `CLOSED` |
+| `SUCCESS` / `REFUND` | **409** `ORDER_PAID` |
+| 不存在 | **404** `ORDER_NOT_FOUND` |
+
+成功响应与查单相同（含 `trade_state=CLOSED`）。
+
+---
+
+## 4.2 退款（教学简化）
+
+整单退；不拆金额、不异步。
+
+### 基本信息
+
+| 项 | 值 |
+|----|-----|
+| Method | `POST` |
+| Path | `/v3/pay/transactions/out-trade-no/{out_trade_no}/refund` |
+| 成功状态码 | `200` |
+
+请求体（可选）：
+
+```json
+{ "reason": "duplicate_pay" }
+```
+
+`reason` 缺省为 `duplicate_pay`。
+
+### 行为
+
+| 当前状态 | 结果 |
+|----------|------|
+| `SUCCESS` | → `REFUND` |
+| `REFUND` | 幂等 OK |
+| `NOTPAY` / `CLOSED` | **409** `NOT_SUCCESS` |
+| 不存在 | **404** |
 
 ---
 
@@ -307,6 +370,8 @@ amount={amount.toPlainString()}&nonce={nonce}&orderNumber={orderNumber}&timestam
 |------|--------|------|------|
 | 渠道 API | POST | `/v3/pay/transactions/native` | 统一下单 |
 | 渠道 API | GET | `/v3/pay/transactions/out-trade-no/{out_trade_no}` | 查单 |
+| 渠道 API | POST | `/v3/pay/transactions/out-trade-no/{out_trade_no}/close` | 关单 |
+| 渠道 API | POST | `/v3/pay/transactions/out-trade-no/{out_trade_no}/refund` | 退款（教学） |
 | 教学 API | POST | `/mock/pay/confirm` | 确认支付并回调 |
 | 出站 | POST | `{notify_url}` | 支付结果通知（本服务发起） |
 
