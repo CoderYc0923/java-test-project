@@ -29,6 +29,9 @@ docker compose down
 docker compose down -v
 ```
 
+业务表与种子**不再**由 Docker 挂载 `sky.sql` 初始化，而由 Liquibase 管理（`take-out-admin` 启动或 `mvn liquibase:update`）。  
+空卷 up 后库是空的，需再跑一次迁移才会有表。详见 `liquibase-command.md`。
+
 ---
 
 ## MySQL

@@ -1,6 +1,7 @@
 services:
   mysql:
     image: mysql:8.0
+    pull_policy: missing # 只在本地缺失时拉取，本地存在镜像就用本地的
     container_name: take-out-mysql
     restart: unless-stopped
     ports:
@@ -15,9 +16,9 @@ services:
     volumes:
       - take-out-mysql-data:/var/lib/mysql
       # 仅数据卷为空时执行一次（新机器首次 up / down -v 后）
+      # 仅字符集 + 账号；业务表/种子改由 Liquibase（见 take-out-admin db/changelog）
       - ./docker/mysql/init/00-charset.sql:/docker-entrypoint-initdb.d/00-charset.sql:ro
       - ./docker/mysql/init/01-users.sql:/docker-entrypoint-initdb.d/01-users.sql:ro
-      - ./sky.sql:/docker-entrypoint-initdb.d/02-sky.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
       interval: 5s

@@ -6,6 +6,12 @@ spring:
     username: takeout_rw
     password: TakeoutRw@123
     driver-class-name: com.mysql.cj.jdbc.Driver
+  liquibase:
+    enabled: true
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+    # 默认用 spring.datasource；一般不用再写 url/user/password
+    # 本地若想暂时关掉迁移：
+    # enabled: false
   data:
     redis:
       host: 127.0.0.1

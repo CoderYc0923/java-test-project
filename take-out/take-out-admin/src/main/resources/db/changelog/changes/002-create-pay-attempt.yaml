@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 002-create-pay-attempt
+      author: cyrus
+      comment: 创建 pay_attempt 表
+      changes:
+        - sqlFile:
+            path: db/changelog/changes/002-create-pay-attempt.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: false
+      rollback:
+        - sql: DROP TABLE IF EXISTS pay_attempt;

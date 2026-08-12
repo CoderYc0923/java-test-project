@@ -152,7 +152,6 @@ public class MockPaymentGateway {
             return existed;
         }
 
-        // 同单入账锁
         Order previewOrder = orderPayPort.findOrderByNumber(dto.getOrderNumber());
         if (previewOrder == null) {
             // 占用了nonce但单不存在：可删nonce以便修数据后重试，生产常留坑 + 告警
@@ -160,6 +159,11 @@ public class MockPaymentGateway {
             throw new BusinessException(ErrorCode.CONFLICT, "订单不存在");
         }
 
+        /**
+         * 支付锁：防止同一订单在回调入账时被并发处理
+         * 例子：1.微信几乎同时推了两次notify或重试叠上 2.多实例部署时，两个节点同时收到同单回调
+         * 
+         */
         String lockKey = PAY_LOCK_PREFIX + previewOrder.getId();
         String lockToken = redisIdempotentHelper.tryLock(lockKey, resolvePayLockTtl());
         if (lockToken == null) {

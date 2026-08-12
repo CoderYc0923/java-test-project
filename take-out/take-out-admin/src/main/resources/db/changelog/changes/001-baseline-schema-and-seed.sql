@@ -1,7 +1,6 @@
--- [ARCHIVED] 业务 DDL/种子已迁到 Liquibase：
---   take-out-admin/.../db/changelog/changes/001-baseline-schema-and-seed.sql
--- Docker init 不再挂载本文件。保留仅作历史对照，请勿再当作唯一真相源。
---
+﻿-- Liquibase baseline (from sky.sql)
+-- DB take_out is created by Docker MYSQL_DATABASE; do NOT CREATE DATABASE / USE here.
+-- Empty DB: liquibase update runs this once. Existing DB with same tables: changelogSync instead.
 -- MySQL dump 10.13  Distrib 8.0.46, for Linux (x86_64)
 --
 -- Host: localhost    Database: take_out
@@ -20,12 +19,9 @@
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
 --
--- Current Database: `take_out`
 --
 
-CREATE DATABASE /*!32312 IF NOT EXISTS*/ `take_out` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci */ /*!80016 DEFAULT ENCRYPTION='N' */;
 
-USE `take_out`;
 
 --
 -- Table structure for table `address_book`
