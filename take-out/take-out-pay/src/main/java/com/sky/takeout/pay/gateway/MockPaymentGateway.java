@@ -15,12 +15,15 @@ import com.sky.takeout.pay.client.MockWechatHttpClient;
 import com.sky.takeout.pay.client.dto.TransactionResponse;
 import com.sky.takeout.pay.config.PayProperties;
 import com.sky.takeout.pay.port.OrderPayPort;
+import com.sky.takeout.pay.port.PayAttemptPort;
 import com.sky.takeout.pay.port.PayOutboxPort;
 import com.sky.takeout.pay.redis.RedisIdempotentHelper;
 import com.sky.takeout.pay.sign.HmacPaySignUtil;
 import com.sky.takeout.pojo.dto.order.MockPayNotifyDTO;
 import com.sky.takeout.pojo.entity.Order;
+import com.sky.takeout.pojo.entity.PayAttempt;
 import com.sky.takeout.pojo.enums.OrderStatus;
+import com.sky.takeout.pojo.enums.PayAttemptStatus;
 import com.sky.takeout.pojo.enums.PayStatus;
 
 /**
@@ -39,6 +42,7 @@ public class MockPaymentGateway {
 
     private final OrderPayPort orderPayPort;
     private final PayOutboxPort payOutboxPort;
+    private final PayAttemptPort payAttemptPort;
     private final PayProperties payProperties;
     private final RedisIdempotentHelper redisIdempotentHelper;
     private final MockWechatHttpClient mockWechatHttpClient;
@@ -54,18 +58,21 @@ public class MockPaymentGateway {
 
     public MockPaymentGateway(OrderPayPort orderPayPort, PayProperties payProperties,
             RedisIdempotentHelper redisIdempotentHelper, MockWechatHttpClient mockWechatHttpClient,
-            PayOutboxPort payOutboxPort, PayNotifyTxService payNotifyTxService) {
+            PayOutboxPort payOutboxPort, PayNotifyTxService payNotifyTxService, PayAttemptPort payAttemptPort) {
         this.orderPayPort = orderPayPort;
         this.payProperties = payProperties;
         this.redisIdempotentHelper = redisIdempotentHelper;
         this.mockWechatHttpClient = mockWechatHttpClient;
         this.payOutboxPort = payOutboxPort;
         this.payNotifyTxService = payNotifyTxService;
+        this.payAttemptPort = payAttemptPort;
     }
 
     /**
      * 用户支付接口
-     * 
+     * 防止并发支付：
+     * 1. 通过redis分布式锁防止短时间用户连点支付按钮，导致同一订单的并发支付。
+     * 2. 若用户正常多开浏览器导致并发支付，则判断是否已有PAYING状态的支付尝试，若有则直接返回；否则创建一条支付尝试。
      * @return 当前订单
      */
     public Order requestPay(Long orderId) {
@@ -102,6 +109,28 @@ public class MockPaymentGateway {
 
             // 验证订单状态
             validateOrder(order);
+
+            // 查询是否已有PAYING状态的支付尝试
+            PayAttempt payAttempt = payAttemptPort.findPayingByOrderId(orderId);
+            if (payAttempt != null) {
+                // 复用：可再次调用native（商户单号相同），以降低重复支付的概率
+                TransactionResponse resp = mockWechatHttpClient.createNativePay(order, payAttempt.getOutTradeNo());
+                payAttemptPort.updatePrepayId(payAttempt.getId(), resp.getPrepayId());
+                log.info("复用进行中的支付尝试单 orderId={} outTradeNo={}", orderId, payAttempt.getOutTradeNo());
+                return order;
+            }
+
+            // 新建支付尝试
+            String outTradeNo = order.getNumber() + "-A" + System.currentTimeMillis();
+            PayAttempt createPayAttempt = new PayAttempt();
+            createPayAttempt.setOrderId(orderId);
+            createPayAttempt.setOrderNumber(order.getNumber());
+            createPayAttempt.setOutTradeNo(outTradeNo);
+            createPayAttempt.setChannel("WECHAT");
+            createPayAttempt.setStatus(PayAttemptStatus.PAYING);
+            createPayAttempt.setAmount(order.getAmount());
+            createPayAttempt.setPayingFlag(1);
+
 
             // 调用微信支付
             TransactionResponse response = mockWechatHttpClient.createNativePay(order);

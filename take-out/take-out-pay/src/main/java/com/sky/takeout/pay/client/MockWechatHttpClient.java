@@ -48,25 +48,32 @@ public class MockWechatHttpClient {
         this.restClient = this.payRestClientBuilder.build();
     }
 
-    public TransactionResponse createNativePay(Order order) {
-        if (order == null) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "订单号不能为空");
+    /**
+     * 创建微信支付请求
+     * @param outTradeNo 商户订单号
+     * @param amount 金额
+     * @param description 描述
+     * @return
+     */
+    public TransactionResponse createNativePay(String outTradeNo, BigDecimal amount, String description) {
+        if (!StringUtils.hasText(outTradeNo)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "outTradeNo 不能为空");
         }
-        if (order.getAmount() == null || order.getAmount().compareTo(BigDecimal.ZERO) < 0) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "订单金额不能为空");
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "金额非法");
         }
         if (!StringUtils.hasText(payProperties.getMerchantNotifyUrl())) {
-            throw new BusinessException(ErrorCode.BAD_REQUEST, "商户支付结果通知 URL 不能为空");
+            throw new BusinessException(ErrorCode.BAD_REQUEST, "notifyUrl 未配置");
         }
 
         /**
          * 构建请求体
          */
         NativePayRequest body = NativePayRequest.builder()
-            .outTradeNo(order.getNumber())
-            .description("外卖订单-" + order.getNumber())
+            .outTradeNo(outTradeNo)
+            .description(description)
             .notifyUrl(payProperties.getMerchantNotifyUrl())
-            .amount(order.getAmount())
+            .amount(amount)
             .build();
 
         log.info("创建微信支付请求：{}", body);
@@ -104,6 +111,16 @@ public class MockWechatHttpClient {
             throw new BusinessException(ErrorCode.ERROR, "创建微信支付请求异常: {}" + e.getMessage());
         }
 
+    }
+
+    /**
+     * 创建微信支付请求
+     * @param order 订单
+     * @param outTradeNo 商户订单号
+     * @return
+     */
+    public TransactionResponse createNativePay(Order order, String outTradeNo) {
+        return createNativePay(outTradeNo, order.getAmount(), "外卖订单-" + order.getNumber());
     }
 
     /**
