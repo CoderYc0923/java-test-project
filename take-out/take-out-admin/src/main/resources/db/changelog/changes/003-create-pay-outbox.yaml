@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-create-pay-outbox
+      author: cyrus
+      comment: 创建 pay_outbox 表
+      changes:
+        - sqlFile:
+            path: db/changelog/changes/003-create-pay-outbox.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: false
+      rollback:
+        - sql: DROP TABLE IF EXISTS pay_outbox;
