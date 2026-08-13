@@ -26,6 +26,19 @@ spring:
       max-file-size: 5MB # 单文件上限（前端约 2MB，后端稍宽）
       max-request-size: 5MB
 
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+
+rocketmq:
+  name-server: 127.0.0.1:9876
+  producer:
+    group: take-out-admin-producer
+    send-message-timeout: 3000
+
 # 支付中心 take-out-pay（详见 docs/tutorials/2026-08-08-pay-package-redis.md）
 pay:
     mock-secret: takeout_admin_pay_secret_key_cyrus
@@ -36,13 +49,6 @@ pay:
     # 对接假微信
     mock-wechat-base-url: http://127.0.0.1:9090
     merchant-notify-url: http://127.0.0.1:8080/admin/order/mockPay/notify
-
-mybatis-plus:
-  configuration:
-    map-underscore-to-camel-case: true
-  global-config:
-    db-config:
-      id-type: auto
 
 jwt:
   admin-secret-key: takeout_admin_jwt_secret_key_cyrus
@@ -57,3 +63,9 @@ oss:
   # 可选：自定义域名；为空则用 https://{bucket}.{endpoint主机}/{key}
   domain: 
   sign-expire-seconds: ${OSS_SIGN_EXPIRE_SECONDS:3600} # 签名 URL 有效期
+
+mq:
+  order-paid-topic: takeout-order-paid
+  order-paid-tag: ORDER_PAID
+  order-paid-consumer-group: take-kitchen-consumer
+  outbox-scan-delay-ms: 15000
