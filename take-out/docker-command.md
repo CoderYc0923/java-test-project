@@ -1,4 +1,4 @@
-# Docker 常用命令（MySQL + Redis）
+# Docker 常用命令（MySQL + Redis + RocketMQ）
 
 在项目根目录 `take-out/` 下执行。
 
@@ -7,30 +7,34 @@
 ## 启动 / 停止（整体）
 
 ```bash
-# 后台启动全部服务（mysql + redis）
+# 后台启动全部服务（mysql + redis + rocketmq-namesrv + rocketmq-broker）
 docker compose up -d
 
-# 只起某一个
+# 只起某一个 / 某一组
 docker compose up -d mysql
 docker compose up -d redis
+docker compose up -d rocketmq-namesrv rocketmq-broker
 
 # 看状态
 docker compose ps
 docker compose logs -f mysql
 docker compose logs -f redis
+docker compose logs -f rocketmq-namesrv
+docker compose logs -f rocketmq-broker
 
-# 停容器（数据还在 volume 里）
+# 停容器（mysql/redis/rocketmq-broker 的 volume 数据还在，除非 down -v）
 docker compose stop
 
-# 删容器但保留数据卷
+# 删容器但保留已声明的 volume（mysql/redis/mq store 数据还在）
 docker compose down
 
-# 连数据卷一起删（MySQL / Redis 数据都清空）
+# 连数据卷一起删（MySQL / Redis / RocketMQ 消息存储都清空）
 docker compose down -v
 ```
 
 业务表与种子**不再**由 Docker 挂载 `sky.sql` 初始化，而由 Liquibase 管理（`take-out-admin` 启动或 `mvn liquibase:update`）。  
-空卷 up 后库是空的，需再跑一次迁移才会有表。详见 `liquibase-command.md`。
+空卷 up 后库是空的，需再跑一次迁移才会有表。详见 `liquibase-command.md`。  
+RocketMQ 教学见 `docs/tutorials/2026-08-13-rocketmq-p0-outbox-handson.md`。
 
 ---
 
@@ -43,7 +47,8 @@ docker compose up -d mysql
 docker compose logs -f mysql
 ```
 
-首次空卷会自动：建库、建用户、导入 `sky.sql`。
+首次空卷会自动：建库 `take_out`、建 `takeout_rw` / `takeout_ro`（见 `docker/mysql/init/`）。  
+**表结构与种子**靠 Liquibase，不是再挂 `sky.sql`。
 
 ### 跨机器同步数据（通过 GitHub）
 
@@ -216,12 +221,167 @@ spring:
 
 ---
 
+## RocketMQ
+
+### 生产怎么部署（你要按这个理解）
+
+线上 MQ **不是**可有可无的玩具，和 MySQL / Redis 一样是独立中间件：
+
+| 组件 | 生产习惯 | 本地 compose 怎么对齐 |
+|------|----------|------------------------|
+| **Broker** | 消息落盘；多台主从/多副本；磁盘独立监控 | 挂 volume：`store`（消息）+ `logs` |
+| **NameServer** | 多实例无状态路由；一般不存消息 | 可不挂卷 |
+| Topic | **预先创建**，关自动建 Topic | 本地仍开 `autoCreateTopicEnable` 图省事；生产应关掉 |
+| 接入 | VPC 内网地址 / 云托管 | `name-server: 127.0.0.1:9876` |
+| 可靠性 | Broker 持久化 **+** 业务 Outbox | 两者都要：MQ 存消息，Outbox 防「库成了没发出」 |
+
+**数据卷在生产的意义：**  
+容器/进程重启后，未消费完的消息还在盘上，消费者还能继续拉。  
+不挂卷 = 删容器消息没了——生产不可接受，所以本地也按生产习惯挂上。
+
+**和 Outbox 的分工（别混）：**
+
+```text
+MySQL Outbox     → 保证「业务已提交」一定会被尝试投递（发送侧）
+Broker 磁盘/卷   → 保证「已进入 MQ 的消息」重启不丢（中间件侧）
+消费幂等         → 保证重复投递不重复干活（消费侧）
+```
+
+三层都要，不是「有 Outbox 就可以不落盘」。
+
+### 本项目 compose 服务
+
+| 服务名 | 容器名 | 作用 | 数据卷 |
+|--------|--------|------|--------|
+| `rocketmq-namesrv` | `take-out-rocketmq-namesrv` | 路由（NameServer） | 无（可接受） |
+| `rocketmq-broker-init` | （一次性） | `chown` store/logs 给 `rocketmq` | 同上两卷 |
+| `rocketmq-broker` | `take-out-rocketmq-broker` | 存消息、投递 | `take-out-rocketmq-broker-store` / `-logs` |
+
+Broker 配置：`docker/rocketmq/broker.conf`（挂载进容器；勿用 YAML `>` + `echo` 拼配置）。
+
+- `brokerIP1=127.0.0.1`：宿主机连本地；生产改成内网 IP/域名  
+- `storePathRootDir=/home/rocketmq/store`：消息目录（已挂卷）  
+- `autoCreateTopicEnable=true`：仅本地方便；**生产应 false**  
+- `JAVA_OPT_EXT=-Xms512m -Xmx512m`：Broker 比 NameServer 更吃内存
+
+**Broker 秒退常见原因（本仓库已踩过）：**
+
+1. **卷属主是 root**：named volume 默认 `root:root`，进程用户是 `rocketmq`，写不了 store → 启动失败；控制台常只看到 shutdown 时的 `NullPointerException`（次生错误）。由 `rocketmq-broker-init` 先 `chown`。  
+2. **YAML `>` 折行**：`command: >` 会把换行变成空格，生成的 conf 变成一行无效配置。
+
+### 启停与日志
+
+```bash
+# 建议一起起（会先跑 broker-init 再起 broker）
+docker compose up -d rocketmq-namesrv rocketmq-broker
+
+docker compose ps
+docker compose logs -f rocketmq-namesrv
+docker compose logs -f rocketmq-broker
+
+# 只停 MQ（volume 里消息还在；再 up 还能接着消费）
+docker compose stop rocketmq-broker rocketmq-namesrv
+docker compose up -d rocketmq-namesrv rocketmq-broker
+
+# 重启 Broker
+docker compose restart rocketmq-broker
+```
+
+镜像拉取慢时：
+
+```bash
+docker compose up -d rocketmq-namesrv rocketmq-broker --pull never
+```
+
+**清空 MQ 消息（相当于 Redis FLUSH，仅本地排障）：**
+
+```bash
+docker compose stop rocketmq-broker
+docker volume rm take-out_take-out-rocketmq-broker-store
+# 若提示 in use：先 docker compose down，再 volume rm，再 up
+docker compose up -d rocketmq-namesrv rocketmq-broker
+```
+
+或直接：
+
+```bash
+docker compose down -v   # 注意：会连 MySQL/Redis 卷一起删！
+```
+
+### 连接信息（给 Spring）
+
+| 项 | 值 |
+|----|-----|
+| NameServer（应用配置） | `127.0.0.1:9876` |
+| Broker 对外端口 | `10909` / `10911` / `10912`（一般只需配 NameServer） |
+
+```yaml
+rocketmq:
+  name-server: 127.0.0.1:9876
+  producer:
+    group: takeout-pay-producer
+```
+
+教学 Topic / Group 约定（见 P0 教程）：
+
+| 项 | 建议值 |
+|----|--------|
+| Topic | `takeout-order-paid` |
+| Tag | `ORDER_PAID` |
+| Consumer Group | `takeout-kitchen-consumer` |
+
+### 容器内排障（常用）
+
+```bash
+# 看 Broker 进程是否在跑
+docker exec take-out-rocketmq-broker sh -c "ps aux | head"
+
+# 进 Broker 容器
+docker exec -it take-out-rocketmq-broker sh
+
+# 确认 store 目录有数据（发过消息后应有 commitlog 等）
+docker exec take-out-rocketmq-broker sh -c "ls -la /home/rocketmq/store"
+
+# mqadmin：集群 / Topic（NameServer 用容器网络名）
+docker exec take-out-rocketmq-broker sh mqadmin clusterList -n rocketmq-namesrv:9876
+docker exec take-out-rocketmq-broker sh mqadmin topicList -n rocketmq-namesrv:9876
+docker exec take-out-rocketmq-broker sh mqadmin topicRoute -n rocketmq-namesrv:9876 -t takeout-order-paid
+docker exec take-out-rocketmq-broker sh mqadmin brokerStatus -n rocketmq-namesrv:9876 -b 127.0.0.1:10911
+```
+
+> `mqadmin` 随版本略有差异；连不上时查 NameServer、`brokerIP1`、端口与日志。
+
+### 应用侧自检
+
+```bash
+Test-NetConnection 127.0.0.1 -Port 9876
+docker compose logs --tail=100 rocketmq-broker
+docker compose logs --tail=100 rocketmq-namesrv
+```
+
+付一笔成功后：Outbox `SENT` + 消费者日志；再 `docker compose restart rocketmq-broker`，未消费消息应仍在（有卷的前提下）。
+
+### 换机器 / 要不要「导出 MQ」
+
+| | MySQL | RocketMQ |
+|--|-------|----------|
+| 业务真相 | 是 | 否（真相在业务库 + Outbox） |
+| 生产 | 备份/主从 | Broker 磁盘 + 多副本 / 云托管 |
+| 换电脑学习 | Liquibase | 重新 up；未发送靠 Outbox；已在 MQ 未消费的本地消息通常不迁 |
+
+云消息队列时：你不自己挂 Docker volume，**持久化由云厂商做**；你只配接入点。本地挂卷是为了养成和生产一致的「Broker 必须落盘」习惯。
+
+---
+
 ## 新机器最小步骤
 
 ```bash
 git pull
 docker compose up -d
-# MySQL：空卷会自动导入 sky.sql；若卷已存在且要覆盖，用上面「导入」或 down -v
+# MySQL：空卷只建库+用户；再跑 Liquibase / 启 admin
 # Redis：直接用，无需导入
+# RocketMQ：namesrv + broker Up 即可；Topic 可自动创建
 docker exec -it take-out-redis redis-cli ping
+docker compose ps
+# 期望看到 take-out-mysql / redis / rocketmq-namesrv / rocketmq-broker
 ```

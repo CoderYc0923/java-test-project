@@ -37,13 +37,13 @@ DB 已提交：订单待接单+已支付
 
 | 概念 | 含义 | 映射到本项目 |
 |------|------|----------------|
-| **Producer** | 发消息 | 支付中心：`publishPendingForOrder` / Outbox 扫描器 |
-| **Consumer** | 收消息 | 例如「厨房通知服务」、关单补偿消费者（可先写在 admin 同进程） |
+| **Producer** | 生产者，发消息 | 支付中心：`publishPendingForOrder` / Outbox 扫描器 |
+| **Consumer** | 消费者，收消息 | 例如「厨房通知服务」、关单补偿消费者（可先写在 admin 同进程） |
 | **Topic** | 消息主题 | 如 `takeout-order-paid`、`takeout-pay-compensate` |
 | **Tag** | 主题下子类型 | 如 `ORDER_PAID`、`CLOSE_CHANNEL`、`REFUND` |
 | **Message Key** | 业务键 | 建议 `orderId` 或 `outTradeNo`，便于排查 |
 | **Consumer Group** | 一组竞争消费 | 同 Group 内一条消息只被一个实例处理 |
-| **Broker** | 存消息、投递 | Docker 起 NameServer + Broker |
+| **Broker** | 消息代理/消息中间人，存消息、投递 | Docker 起 NameServer + Broker |
 
 面试句：**Topic 分类业务，Group 决定谁来消费、能否水平扩展。**
 

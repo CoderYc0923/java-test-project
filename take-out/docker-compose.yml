@@ -24,7 +24,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-  
+
   redis:
     image: redis:7.2
     container_name: take-out-redis
@@ -40,7 +40,53 @@ services:
       timeout: 3s
       retries: 10
 
-  
+  rocketmq-namesrv:
+    image: apache/rocketmq:5.3.1
+    container_name: take-out-rocketmq-namesrv
+    ports:
+      - "9876:9876"
+    command: sh mqnamesrv
+    environment:
+      JAVA_OPT_EXT: "-Xms256m -Xmx256m"
+
+  # Docker named volume 默认属主 root；镜像以 rocketmq 用户跑，必须先 chown 才能写 store/logs
+  rocketmq-broker-init:
+    image: apache/rocketmq:5.3.1
+    user: "0"
+    volumes:
+      - take-out-rocketmq-broker-store:/home/rocketmq/store
+      - take-out-rocketmq-broker-logs:/home/rocketmq/logs
+    entrypoint:
+      - sh
+      - -c
+      - chown -R rocketmq:rocketmq /home/rocketmq/store /home/rocketmq/logs
+    restart: "no"
+
+  rocketmq-broker:
+    image: apache/rocketmq:5.3.1
+    container_name: take-out-rocketmq-broker
+    ports:
+      - "10909:10909"
+      - "10911:10911"
+      - "10912:10912"
+    environment:
+      NAMESRV_ADDR: rocketmq-namesrv:9876
+      # Broker 比 NameServer 更吃内存；256m 容易启动失败
+      JAVA_OPT_EXT: "-Xms512m -Xmx512m"
+    volumes:
+      - take-out-rocketmq-broker-store:/home/rocketmq/store
+      - take-out-rocketmq-broker-logs:/home/rocketmq/logs
+      # 不要用 YAML `>` + echo 拼 conf：`>` 会把换行折成空格，配置文件会坏掉
+      - ./docker/rocketmq/broker.conf:/home/rocketmq/rocketmq-5.3.1/conf/broker-takeout.conf:ro
+    command: sh mqbroker -n rocketmq-namesrv:9876 -c /home/rocketmq/rocketmq-5.3.1/conf/broker-takeout.conf
+    depends_on:
+      rocketmq-namesrv:
+        condition: service_started
+      rocketmq-broker-init:
+        condition: service_completed_successfully
+
 volumes:
   take-out-mysql-data:
   take-out-redis-data:
+  take-out-rocketmq-broker-store:
+  take-out-rocketmq-broker-logs:
