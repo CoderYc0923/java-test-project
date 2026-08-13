@@ -5,6 +5,7 @@ public final class SecurityConstant {
     public static final String[] WHITE_LIST = {
         "/admin/employee/login",
         "/admin/order/mockPay/notify",
+        "/ws/**",
         "/v3/api-docs/**",
         "/swagger-ui/**",
         "/swagger-ui.html"

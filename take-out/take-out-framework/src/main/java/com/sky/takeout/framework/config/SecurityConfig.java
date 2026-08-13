@@ -11,6 +11,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 
 import com.sky.takeout.framework.security.JwtAccessDeniedHandler;
 import com.sky.takeout.framework.security.JwtAuthenticationEntryPoint;
@@ -82,15 +83,19 @@ public class SecurityConfig {
             JwtAuthenticationEntryPoint entryPoint,
             JwtAccessDeniedHandler accessDeniedHandler) throws Exception {
         // 禁用 CSRF 保护
+        // Spring Security 7 已移除 AntPathRequestMatcher；用 PathPatternRequestMatcher 按 URI 匹配，
+        // 避免默认 MVC matcher 导致 /ws/**（非 Controller）白名单失效 → WebSocket 401。
         http.csrf(csrf -> csrf.disable())
-                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // 禁用 Session 管理
-                .authorizeHttpRequests(
-                        auth -> auth.requestMatchers(SecurityConstant.WHITE_LIST).permitAll().anyRequest().authenticated()) // 登录接口放行，其他接口需要认证
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> {
+                    for (String pattern : SecurityConstant.WHITE_LIST) {
+                        auth.requestMatchers(PathPatternRequestMatcher.pathPattern(pattern)).permitAll();
+                    }
+                    auth.anyRequest().authenticated();
+                })
                 .exceptionHandling(
-                        ex -> ex.authenticationEntryPoint(entryPoint).accessDeniedHandler(accessDeniedHandler)) // 认证失败和权限不足时，返回自定义的响应
-                .addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class); // 将 JWT 认证过滤器添加到
-                                                                                      // UsernamePasswordAuthenticationFilter
-                                                                                      // 之前
+                        ex -> ex.authenticationEntryPoint(entryPoint).accessDeniedHandler(accessDeniedHandler))
+                .addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

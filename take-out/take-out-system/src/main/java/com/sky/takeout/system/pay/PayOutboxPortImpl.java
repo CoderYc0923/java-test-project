@@ -11,6 +11,7 @@ import org.springframework.util.StringUtils;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.sky.takeout.pay.mq.OrderPaidProducer;
 import com.sky.takeout.pay.port.PayOutboxPort;
 import com.sky.takeout.pojo.dto.mq.OrderPaidMessage;
 import com.sky.takeout.pojo.entity.PayOutbox;
@@ -32,10 +33,12 @@ public class PayOutboxPortImpl implements PayOutboxPort {
 
     private final PayOutboxMapper payOutboxMapper;
     private final ObjectMapper objectMapper;
+    private final OrderPaidProducer orderPaidProducer;
 
-    public PayOutboxPortImpl(PayOutboxMapper payOutboxMapper, ObjectMapper objectMapper) {
+    public PayOutboxPortImpl(PayOutboxMapper payOutboxMapper, ObjectMapper objectMapper, OrderPaidProducer orderPaidProducer) {
         this.payOutboxMapper = payOutboxMapper;
         this.objectMapper = objectMapper;
+        this.orderPaidProducer = orderPaidProducer;
     }
 
     /**
@@ -108,6 +111,7 @@ public class PayOutboxPortImpl implements PayOutboxPort {
      * @param limit 限制数量
      * @return
      */
+    @Override
     public int publishBatchNew(int limit) {
         List<PayOutbox> pendingRows = payOutboxMapper.selectList(
             new LambdaQueryWrapper<PayOutbox>()
@@ -136,6 +140,20 @@ public class PayOutboxPortImpl implements PayOutboxPort {
 
         try {
             // 生产者发消息
+            orderPaidProducer.send(row.getPayload(), row.getOrderId(), row.getEventId());
+
+            // 标记消息为已发送
+            int updated = payOutboxMapper.update(null, 
+                new LambdaUpdateWrapper<PayOutbox>()
+                    .eq(PayOutbox::getId, row.getId())
+                    .eq(PayOutbox::getStatus, PayOutboxStatus.NEW)
+                    .set(PayOutbox::getStatus, PayOutboxStatus.SENT)
+                );
+
+            if (updated == 1) {
+                log.info("支付出站消息发送成功，id={}, eventId={}", row.getId(), row.getEventId());
+                return true;
+            }
             return false;
         } catch (Exception e) {
             // 不抛给afterCommit去回滚，留NEW让扫描器去扫

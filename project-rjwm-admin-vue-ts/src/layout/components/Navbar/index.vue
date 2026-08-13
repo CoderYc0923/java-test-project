@@ -215,15 +215,24 @@ export default class extends Vue {
         that.$refs.audioVo2.currentTime = 0
 
         console.log(msg, JSON.parse(msg.data), 'msg')
-        // const h = this.$createElement
         const jsonMsg = JSON.parse(msg.data)
+
+        // 同一订单短时去重，避免 MQ 重试导致重复弹窗
+        if (jsonMsg.orderId != null) {
+          const dedupeKey = 'kitchen_notified_' + jsonMsg.orderId
+          if (sessionStorage.getItem(dedupeKey)) {
+            return
+          }
+          sessionStorage.setItem(dedupeKey, '1')
+        }
+
         if (jsonMsg.type === 1) {
           that.$refs.audioVo.play()
         } else if (jsonMsg.type === 2) {
           that.$refs.audioVo2.play()
         }
         that.$notify({
-          title: jsonMsg.type === 1 ? '待接单' : '催单',
+          title: jsonMsg.type === 1 ? '厨房来单' : '催单',
           duration: 0,
           dangerouslyUseHTMLString: true,
           onClick: () => {
@@ -236,10 +245,9 @@ export default class extends Vue {
               location.reload()
             }, 100)
           },
-          // 这里也可以把返回信息加入到message中显示
           message: `${
             jsonMsg.type === 1
-              ? `<span>您有1个<span style=color:#419EFF>订单待处理</span>,${jsonMsg.content},请及时接单</span>`
+              ? `<span>${jsonMsg.content || '厨房：您有一笔新的订单，请接单'}</span>`
               : `${jsonMsg.content}<span style='color:#419EFF;cursor: pointer'>去处理</span>`
           }`,
         })

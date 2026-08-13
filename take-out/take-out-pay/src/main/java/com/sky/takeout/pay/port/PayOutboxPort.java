@@ -18,4 +18,11 @@ public interface PayOutboxPort {
      * @param orderId
      */
     void publishPendingForOrder(Long orderId);
+
+    /**
+     * 发布批量新消息
+     * @param limit
+     * @return
+     */
+    int publishBatchNew(int limit);
 }
