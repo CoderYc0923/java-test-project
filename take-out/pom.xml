@@ -30,6 +30,7 @@
     <properties>
         <java.version>17</java.version>
         <take-out.version>0.0.1-SNAPSHOT</take-out.version>
+        <rocketmq-spring.version>2.3.6</rocketmq-spring.version>
     </properties>
 
     <dependencyManagement>
@@ -40,6 +41,11 @@
                 <version>3.5.17</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.rocketmq</groupId>
+                <artifactId>rocketmq-spring-boot-starter</artifactId>
+                <version>${rocketmq-spring.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.sky</groupId>
