@@ -211,7 +211,7 @@ public class MockPaymentGateway {
 
         /**
          * 支付锁：防止同一订单在回调入账时被并发处理
-         * 例子：1.微信几乎同时推了两次notify或重试叠上 2.多实例部署时，两个节点同时收到同单回调
+         * 例子：1.微信补推/重试，不同的nonce 2.多实例部署时，两个节点同时收到同单回调（比如第 1 次 notify → 实例 A；第 2 次 notify（重试或并发推送）→ 实例 B）
          * 
          */
         String lockKey = PAY_LOCK_PREFIX + payAttempt.getOrderId();

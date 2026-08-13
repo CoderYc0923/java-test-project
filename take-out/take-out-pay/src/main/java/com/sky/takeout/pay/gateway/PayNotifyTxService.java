@@ -79,7 +79,11 @@ public class PayNotifyTxService {
         AtomicReference<String> outTradeNoHolder = new AtomicReference<>();
 
         try {
-            // 注册解锁同步
+            /**
+             * 注册解锁同步
+             * TransactionSynchronizationManager.registerSynchronization：是 Spring 提供的钩子在「当前线程正在进行的数据库事务」结束时，按约定回调你注册的代码。
+             * registerSynchronization(...) 本身不开启事务，只是往当前事务上挂一个监听器。
+             */
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {

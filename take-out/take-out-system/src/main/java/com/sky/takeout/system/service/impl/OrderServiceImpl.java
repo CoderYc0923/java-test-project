@@ -339,6 +339,7 @@ public class OrderServiceImpl implements OrderService {
     /**
      * 模拟支付
      * 调用支付网关进行支付；返回带 outTradeNo / checkoutUrl，供前端打开确认页
+     * @param id 订单id
      */
     @Override
     public OrderMockVO mockPay(Long id) {
