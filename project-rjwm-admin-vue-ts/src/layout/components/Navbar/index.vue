@@ -217,9 +217,13 @@ export default class extends Vue {
         console.log(msg, JSON.parse(msg.data), 'msg')
         const jsonMsg = JSON.parse(msg.data)
 
-        // 同一订单短时去重，避免 MQ 重试导致重复弹窗
-        if (jsonMsg.orderId != null) {
-          const dedupeKey = 'kitchen_notified_' + jsonMsg.orderId
+        // 优先按 eventId 去重（状态变更同单会多次推）；无 eventId 时退回 orderId（来单）
+        const dedupeKey = jsonMsg.eventId
+          ? 'ws_event_' + jsonMsg.eventId
+          : jsonMsg.orderId != null
+          ? 'kitchen_notified_' + jsonMsg.orderId
+          : null
+        if (dedupeKey) {
           if (sessionStorage.getItem(dedupeKey)) {
             return
           }
@@ -231,8 +235,14 @@ export default class extends Vue {
         } else if (jsonMsg.type === 2) {
           that.$refs.audioVo2.play()
         }
+        const title =
+          jsonMsg.type === 1
+            ? '厨房来单'
+            : jsonMsg.type === 3
+            ? '订单状态'
+            : '催单'
         that.$notify({
-          title: jsonMsg.type === 1 ? '厨房来单' : '催单',
+          title,
           duration: 0,
           dangerouslyUseHTMLString: true,
           onClick: () => {
@@ -248,7 +258,7 @@ export default class extends Vue {
           message: `${
             jsonMsg.type === 1
               ? `<span>${jsonMsg.content || '厨房：您有一笔新的订单，请接单'}</span>`
-              : `${jsonMsg.content}<span style='color:#419EFF;cursor: pointer'>去处理</span>`
+              : `${jsonMsg.content || ''}<span style='color:#419EFF;cursor: pointer'>去处理</span>`
           }`,
         })
       }

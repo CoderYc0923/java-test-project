@@ -13,7 +13,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class OrderStatusMessage {
     
-    private Long eventId;
+    private String eventId;
 
     private Long orderId;
 

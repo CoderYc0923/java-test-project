@@ -255,26 +255,177 @@ producer.send(message, selected);
 禁止：事务未提交就发，导致消费端读到旧状态
 ```
 
-### 4.3 业务侧如何挂（示意，非强制改仓库）
+### 4.3 业务侧如何挂（优化教程：CAS + 抽公共 + afterCommit）
 
-在「接单 / 起送 / 完成」等 **状态 CAS 成功之后**：
+> **示意，非强制立刻改仓库。** 目标：把现在的「先 assert 再 `updateById`」收成可复用的状态机迁移，并在**事务提交后**再发有序状态消息。
+
+#### 4.3.1 现状问题（对照你现在的 `confirm`）
+
+```text
+getOrder → assertStatus(期望) → setStatus → updateById
+```
+
+并发下两个人同时接同一单时，两人都可能通过 assert，两人都 update 成功（或后写覆盖），**没有「只有一人迁移成功」的保证**。  
+发 MQ 若写在 `@Transactional` 方法返回前同步发送，消费端还可能读到**未提交**的旧状态。
+
+#### 4.3.2 目标形态
+
+```text
+CAS：WHERE id=? AND status=fromStatus  →  SET status=toStatus（+ 附带字段）
+  rows==1：本请求赢得迁移
+  rows==0：冲突 / 已被别人改走 → 抛业务异常
+事务提交后（afterCommit）：OrderStatusProducer.send（有序，hashKey=orderId）
+```
+
+#### 4.3.3 抽一层公共：`transitionAndPublish`
+
+接单 / 派送 / 完成 / 取消，差异只有：
+
+| 差异点 | 例子 |
+|--------|------|
+| `fromStatus` | 接单：待接单；派送：已接单 |
+| `toStatus` | 接单→已接单；派送→派送中 |
+| 额外字段 patch | 拒单写 `rejectionReason`；取消写 `cancelReason` |
+| 错误文案 | 「只有待接单才能接单」 |
+
+抽成一个私有模板方法（名字随意）：
+
+```text
+transitionAndPublish(
+    orderId,
+    fromStatus,
+    toStatus,
+    patch回调,          // 可选：给 UPDATE 补字段
+    conflictMessage     // CAS 失败文案
+)
+```
+
+内部步骤固定：
+
+1. （可选）先 `selectById` 拿 `orderNumber` 等展示字段；**不以这次读到的 status 当写条件**。  
+2. `casUpdateStatus(orderId, from, to, patch)` → 影响行数。  
+3. `rows != 1` → `BusinessException(conflictMessage)`。  
+4. **注册** `TransactionSynchronization.afterCommit`：组装 `OrderStatusMessage`（或教程里的 `OrderStatusChangedMessage`），调用已有 `OrderStatusProducer.send`。  
+5. 方法在事务内返回；真正发 MQ 发生在提交成功之后。
+
+各业务方法变薄：
+
+```text
+confirm   → transitionAndPublish(id, TO_BE_CONFIRMED, CONFIRMED, null, "只有待接单…")
+delivery  → transitionAndPublish(id, CONFIRMED, DELIVERY_IN_PROGRESS, null, "…")
+complete  → transitionAndPublish(id, DELIVERY_IN_PROGRESS, COMPLETED, patch交货时间, "…")
+rejection → transitionAndPublish(id, TO_BE_CONFIRMED, CANCELLED, patch拒单原因+时间, "…")
+cancel    → 先校验 from ∈ 可取消集合，再 CAS（from=当前库状态 或 对每个允许 from 尝试；见下）
+```
+
+**取消**若允许多种原状态：不要用「读出来的 status 直接当 CAS from」以外的写法——要么：
+
+- CAS：`WHERE id=? AND status IN (待接单,已接单,派送中)` 一次更新成取消（单 SQL）；或  
+- 读到 current 后 `transitionAndPublish(id, current, CANCELLED, …)`（读与写之间仍有缝，但比无 CAS 好；严格可用 `IN` 版）。
+
+#### 4.3.4 Mapper CAS（示意 SQL）
+
+```sql
+UPDATE orders
+SET status = #{toStatus},
+    -- 可选：rejection_reason / cancel_reason / delivery_time / cancel_time
+    update_time = NOW()   -- 若有该列
+WHERE id = #{id}
+  AND status = #{fromStatus}
+```
+
+MyBatis-Plus 等价：`LambdaUpdateWrapper` 带 `.eq(Order::getStatus, from)` + `.set(Order::getStatus, to)`，返回 `update` 影响行数。  
+与支付侧 `casMarkPaid` **同一思想**，只是订单状态机多几个 from→to。
+
+#### 4.3.5 为什么发消息放 afterCommit（推荐）
+
+| 做法 | 结果 |
+|------|------|
+| 事务内 `update` 后立刻 `syncSendOrderly` | 可能：消息已发、事务稍后回滚；或消费者读库仍旧 |
+| **afterCommit 再 send** | 库已可见新状态再通知下游 |
+| 同事务写状态 Outbox，扫描有序发送 | 最稳（与支付 P0 同模型）；本期可先 afterCommit |
+
+发送失败策略（与文档 §4.2 一致）：状态已提交则**不要轻易回滚订单**；记日志 / 进补发（Outbox 扫描），由运维或定时任务用同一 `orderId` 有序重发。
+
+#### 4.3.6 伪代码总览（手抄对照）
 
 ```java
-// 伪代码：OrderService.confirm(orderId) 内
-int rows = orderMapper.casStatus(orderId, TO_BE_CONFIRMED, CONFIRMED);
-if (rows == 1) {
-    orderStatusChangedProducer.send(OrderStatusChangedMessage.builder()
-            .eventId(UUID.randomUUID().toString())
-            .orderId(orderId)
-            .orderNumber(order.getNumber())
-            .fromStatus("TO_BE_CONFIRMED")
-            .toStatus("CONFIRMED")
-            .occurredAt(LocalDateTime.now().toString())
-            .build());
+// ========== 公共：CAS + afterCommit 发有序消息 ==========
+private void transitionAndPublish(Long orderId,
+                                  OrderStatus from,
+                                  OrderStatus to,
+                                  Consumer<Order> patch,      // 可 null
+                                  String conflictMsg) {
+    Order snapshot = getOrder(orderId); // 主要拿 number；不作为写条件
+
+    Order patchEntity = new Order();
+    patchEntity.setStatus(to);
+    if (patch != null) {
+        patch.accept(patchEntity); // 例如 setRejectionReason / setCancelTime
+    }
+
+    int rows = orderMapper.update(patchEntity,
+            new LambdaUpdateWrapper<Order>()
+                    .eq(Order::getId, orderId)
+                    .eq(Order::getStatus, from));
+    if (rows != 1) {
+        throw new BusinessException(ErrorCode.CONFLICT, conflictMsg);
+    }
+
+    String eventId = UUID.randomUUID().toString();
+    Long oid = orderId;
+    String number = snapshot.getNumber();
+
+    TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+        @Override
+        public void afterCommit() {
+            orderStatusProducer.send(OrderStatusMessage.builder()
+                    .eventId(eventId)
+                    .orderId(oid)
+                    .orderNumber(number)
+                    .fromStatus(from)   // 若消息体是枚举；字符串版则用 name()
+                    .toStatus(to)
+                    .occurredAt(LocalDateTime.now().toString())
+                    .build());
+            // Producer 内部：syncSendOrderly(..., hashKey = String.valueOf(orderId))
+        }
+    });
+}
+
+// ========== 业务变薄 ==========
+public void confirm(OrderConfirmDTO dto) {
+    transitionAndPublish(dto.getId(),
+            OrderStatus.TO_BE_CONFIRMED, OrderStatus.CONFIRMED,
+            null, "只有待接单订单才能接单");
+}
+
+public void delivery(Long id) {
+    transitionAndPublish(id,
+            OrderStatus.CONFIRMED, OrderStatus.DELIVERY_IN_PROGRESS,
+            null, "只有待派送订单才能派送");
 }
 ```
 
-多条同单连续变更，只要都用同一 `orderId` 有序发送，消费端就会按发送序处理。
+多条同单连续变更（接单→派送→完成），只要都走该模板且 **hashKey 均为 orderId**，消费端顺序监听就会按发送序处理。
+
+#### 4.3.7 手写检查清单
+
+- [ ] 写库条件带 `status = from`，不靠「先读再盲写」  
+- [ ] `rows == 1` 才算成功；`0` 当冲突  
+- [ ] confirm / delivery / complete / rejection（及 cancel）复用同一迁移方法  
+- [ ] MQ 在 **afterCommit**（或 Outbox），不在未提交事务里硬发  
+- [ ] `eventId` 每次迁移新生成；消费端按 eventId 幂等  
+- [ ] 发送失败不误回滚已提交状态（除非你明确要强一致同步发且能接受回滚）
+
+#### 4.3.8 和支付 CAS 的对照
+
+| | 支付入账 | 订单状态（本节省） |
+|--|----------|-------------------|
+| CAS 条件 | 待付款+未支付 | `status = fromStatus` |
+| 成功后副作用 | Outbox → 厨房 MQ | afterCommit → 状态有序 MQ |
+| 公共抽象 | `casMarkPaid` | `transitionAndPublish` |
+
+学完支付 CAS 后，把订单四五个入口收成一个模板，是同一肌肉记忆。
 
 ---
 

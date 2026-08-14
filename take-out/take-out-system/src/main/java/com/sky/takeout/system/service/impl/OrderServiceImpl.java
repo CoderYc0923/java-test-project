@@ -7,7 +7,9 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -15,9 +17,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.sky.takeout.common.exception.BusinessException;
@@ -26,6 +31,7 @@ import com.sky.takeout.pay.config.PayProperties;
 import com.sky.takeout.pay.gateway.MockPaymentGateway;
 import com.sky.takeout.pay.port.PayAttemptPort;
 import com.sky.takeout.pay.redis.RedisIdempotentHelper;
+import com.sky.takeout.pojo.dto.mq.OrderStatusMessage;
 import com.sky.takeout.pojo.dto.order.MockPayNotifyDTO;
 import com.sky.takeout.pojo.dto.order.OrderCancelDTO;
 import com.sky.takeout.pojo.dto.order.OrderConfirmDTO;
@@ -37,6 +43,7 @@ import com.sky.takeout.system.mapper.DishMapper;
 import com.sky.takeout.system.mapper.OrderDetailMapper;
 import com.sky.takeout.system.mapper.OrderMapper;
 import com.sky.takeout.system.mapper.SetmealMapper;
+import com.sky.takeout.system.mq.producers.OrderStatusProducer;
 import com.sky.takeout.system.service.OrderService;
 
 import lombok.Data;
@@ -79,6 +86,7 @@ public class OrderServiceImpl implements OrderService {
     private final RedisIdempotentHelper redisIdempotentHelper;
     private final PayProperties payProperties;
     private final PayAttemptPort payAttemptPort;
+    private final OrderStatusProducer orderStatusProducer;
 
     /** 防连点下单：order:idempotent:{requestId} */
     private static final String IDEMPOTENT_KEY_PREFIX = "order:idempotent:";
@@ -92,7 +100,8 @@ public class OrderServiceImpl implements OrderService {
 
     public OrderServiceImpl(OrderMapper orderMapper, OrderDetailMapper orderDetailMapper, DishMapper dishMapper,
             SetmealMapper setmealMapper, MockPaymentGateway mockPaymentGateway,
-            RedisIdempotentHelper redisIdempotentHelper, PayProperties payProperties, PayAttemptPort payAttemptPort) {
+            RedisIdempotentHelper redisIdempotentHelper, PayProperties payProperties, PayAttemptPort payAttemptPort,
+            OrderStatusProducer orderStatusProducer) {
         this.orderMapper = orderMapper;
         this.orderDetailMapper = orderDetailMapper;
         this.dishMapper = dishMapper;
@@ -101,6 +110,7 @@ public class OrderServiceImpl implements OrderService {
         this.redisIdempotentHelper = redisIdempotentHelper;
         this.payProperties = payProperties;
         this.payAttemptPort = payAttemptPort;
+        this.orderStatusProducer = orderStatusProducer;
     }
 
     @Override
@@ -184,15 +194,10 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void confirm(OrderConfirmDTO confirmDTO) {
-        Order order = getOrder(confirmDTO.getId());
 
-        // 只允许待接单状态的订单被接单
-        assertOrderStatus(order, OrderStatus.TO_BE_CONFIRMED, "只有待接单订单才能接单");
+        transitionAndPublish(confirmDTO.getId(), OrderStatus.TO_BE_CONFIRMED, OrderStatus.CONFIRMED, null,
+                "只有待接单订单才能接单");
 
-        // 更新订单状态为已接单
-        order.setStatus(OrderStatus.CONFIRMED);
-        orderMapper.updateById(order);
-        log.info("订单{}状态改为已接单", order.getId());
     }
 
     /**
@@ -201,16 +206,12 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void rejection(OrderRejectionDTO rejectionDTO) {
-        Order order = getOrder(rejectionDTO.getId());
 
-        // 只允许待接单状态的订单被拒单；原因非空由 DTO @NotBlank 保证
-        assertOrderStatus(order, OrderStatus.TO_BE_CONFIRMED, "只有待接单订单才能拒单");
-
-        order.setStatus(OrderStatus.CANCELLED);
-        order.setRejectionReason(rejectionDTO.getRejectionReason().trim());
-        order.setCancelTime(LocalDateTime.now());
-        orderMapper.updateById(order);
-        log.info("订单{}已拒单", order.getId());
+        transitionAndPublish(rejectionDTO.getId(), OrderStatus.TO_BE_CONFIRMED, OrderStatus.CANCELLED, o -> {
+            o.setRejectionReason(rejectionDTO.getRejectionReason().trim());
+            o.setCancelTime(LocalDateTime.now());
+        },
+                "只有待接单订单才能拒单");
     }
 
     /**
@@ -219,15 +220,9 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void delivery(Long id) {
-        Order order = getOrder(id);
 
-        // 只允许已接单状态的订单被派送
-        assertOrderStatus(order, OrderStatus.CONFIRMED, "只有待派送订单才能派送");
-
-        // 更新订单状态为派送中
-        order.setStatus(OrderStatus.DELIVERY_IN_PROGRESS);
-        orderMapper.updateById(order);
-        log.info("订单{}状态改为派送中", order.getId());
+        transitionAndPublish(id, OrderStatus.CONFIRMED, OrderStatus.DELIVERY_IN_PROGRESS, null,
+                "只有待派送订单才能派送");
     }
 
     /**
@@ -236,16 +231,11 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void complete(Long id) {
-        Order order = getOrder(id);
 
-        // 只允许派送中状态的订单被完成
-        assertOrderStatus(order, OrderStatus.DELIVERY_IN_PROGRESS, "只有派送中订单才能完成");
-
-        // 更新订单状态为已完成
-        order.setStatus(OrderStatus.COMPLETED);
-        order.setDeliveryTime(LocalDateTime.now());
-        orderMapper.updateById(order);
-        log.info("订单{}状态改为已完成", order.getId());
+        transitionAndPublish(id, OrderStatus.DELIVERY_IN_PROGRESS, OrderStatus.COMPLETED, o -> {
+            o.setDeliveryTime(LocalDateTime.now());
+        },
+                "只有派送中订单才能完成");
 
     }
 
@@ -255,22 +245,15 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void cancel(OrderCancelDTO cancelDTO) {
-        Order order = getOrder(cancelDTO.getId());
-        OrderStatus currentStatus = order.getStatus();
         List<OrderStatus> cancelableStatuses = List.of(OrderStatus.TO_BE_CONFIRMED, OrderStatus.CONFIRMED,
                 OrderStatus.DELIVERY_IN_PROGRESS);
 
-        if (!cancelableStatuses.contains(currentStatus)) {
-            throw new BusinessException(ErrorCode.CONFLICT,
-                    "当前订单状态不允许取消：" + (currentStatus == null ? "null" : currentStatus.getMessage()));
-        }
 
-        order.setStatus(OrderStatus.CANCELLED);
-        order.setCancelReason(cancelDTO.getCancelReason().trim());
-        order.setCancelTime(LocalDateTime.now());
-        orderMapper.updateById(order);
-        log.info("订单{}状态改为已取消", order.getId());
-
+        transitionAndPublish(cancelDTO.getId(), cancelableStatuses, OrderStatus.COMPLETED, o -> {
+            o.setCancelReason(cancelDTO.getCancelReason().trim());
+            o.setCancelTime(LocalDateTime.now());
+        },
+                "当前订单状态不允许取消");
     }
 
     /**
@@ -284,7 +267,7 @@ public class OrderServiceImpl implements OrderService {
     @Transactional(rollbackFor = Exception.class)
     public OrderMockVO mock(OrderMockDTO mockDTO) {
         // 强制幂等键：没有就不建单
-        if(!StringUtils.hasText(mockDTO.getRequestId())) {
+        if (!StringUtils.hasText(mockDTO.getRequestId())) {
             throw new BusinessException(ErrorCode.BAD_REQUEST, "requestId不能为空");
         }
 
@@ -302,11 +285,11 @@ public class OrderServiceImpl implements OrderService {
         // 判断是否是该订单第一次请求
         boolean first = redisIdempotentHelper.trySetNx(key, PROCESSING, ttl);
         // 若不是第一次请求
-        if(!first) {
+        if (!first) {
             // 拿到缓存中的订单id
             String cached = redisIdempotentHelper.get(key);
             // 若缓存中的订单id为PROCESSING，则说明该订单正在处理中，抛出异常
-            if(PROCESSING.equals(cached)) {
+            if (PROCESSING.equals(cached)) {
                 throw new BusinessException(ErrorCode.TOO_MANY_REQUESTS, "下单处理中，请勿重复下单");
             }
             // 若缓存中的订单id不为空，则说明该订单已存在，返回原单
@@ -339,6 +322,7 @@ public class OrderServiceImpl implements OrderService {
     /**
      * 模拟支付
      * 调用支付网关进行支付；返回带 outTradeNo / checkoutUrl，供前端打开确认页
+     * 
      * @param id 订单id
      */
     @Override
@@ -506,10 +490,62 @@ public class OrderServiceImpl implements OrderService {
         return order;
     }
 
-    private void assertOrderStatus(Order order, OrderStatus expectedStatus, String message) {
-        if (order.getStatus() != expectedStatus) {
-            throw new BusinessException(ErrorCode.CONFLICT, message);
+    /**
+     * 状态变迁并发布
+     * 
+     * @param orderId     订单id
+     * @param fromStatus  当前状态
+     * @param toStatus    目标状态
+     * @param consumer    消费者
+     * @param conflictMsg 冲突消息
+     */
+    private void transitionAndPublish(Long orderId, OrderStatus fromStatus, OrderStatus toStatus,
+            Consumer<Order> consumer, String conflictMsg) {
+        transitionAndPublish(orderId, List.of(fromStatus), toStatus, consumer, conflictMsg);
+    }
+
+    public void transitionAndPublish(Long orderId, List<OrderStatus> fromStatuses, OrderStatus toStatus,
+            Consumer<Order> consumer, String conflictMsg) {
+        // 获取订单快照
+        Order snapshot = getOrder(orderId);
+
+        // 创建补丁实体
+        Order patchEntity = new Order();
+        patchEntity.setStatus(toStatus);
+        if (consumer != null) {
+            // 执行消费者，填充补丁实体
+            consumer.accept(patchEntity);
         }
+
+        int rows = orderMapper.update(patchEntity, new LambdaUpdateWrapper<Order>()
+                .eq(Order::getId, orderId)
+                .in(Order::getStatus, fromStatuses));
+
+        if (rows != 1) {
+            throw new BusinessException(ErrorCode.CONFLICT, conflictMsg);
+        }
+
+        String eventId = UUID.randomUUID().toString();
+        Long oid = orderId;
+        String number = snapshot.getNumber();
+        // 消息里的 from：用库里真实旧状态（取消等多 from 时更准）
+        OrderStatus actualFrom = snapshot.getStatus();
+
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                OrderStatusMessage msg = OrderStatusMessage.builder()
+                        .eventId(eventId)
+                        .orderId(oid)
+                        .orderNumber(number)
+                        .fromStatus(actualFrom)
+                        .toStatus(toStatus)
+                        .occurredAt(LocalDateTime.now().toString())
+                        .build();
+
+                orderStatusProducer.send(msg);
+            }
+        });
     }
 
     /**
