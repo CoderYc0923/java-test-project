@@ -75,3 +75,10 @@ mq:
   compensate-close-tag: CLOSE_CHANNEL
   compensate-refund-tag: REFUND
   compensate-consumer-group: take-pay-compensate-consumer
+
+  take-order-status-topic: takeout-order-status
+  take-order-status-consumer-group: take-order-status-consumer
+  take-order-confirmed-tag: CONFIRMED
+  take-order-delivering-tag: DELIVERY_IN_PROGRESS
+  take-order-completed-tag: COMPLETED
+  take-order-cancelled-tag: CANCELLED
