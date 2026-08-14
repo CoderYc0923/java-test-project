@@ -286,19 +286,238 @@ public class PayCompensateProducer {
 
 destination 形式与 P0 相同：`topic + ":" + tag`。Message Key 建议用 `outTradeNo`，便于按单排查。
 
-### 5.4 改造 afterCommit（对照）
+### 5.4 改造 afterCommit（完整对照）
 
-```text
-CLOSE_OTHERS:
-  1. publishPendingForOrder(orderId)           // P0
-  2. 列出其它未终态 attempt → 每条 sendClose   // P1，不再 mockWechatHttpClient.close
+**目标：** 回调线程只发 MQ；`close` / `refund` HTTP 与本地终态改写放到 `PayCompensateConsumer`。
 
-REFUND:
-  1. 短事务内已把 attempt 标成 REFUNDING
-  2. afterCommit 只 sendRefund                 // 不再同步 refund + 标 REFUNDED
+**依赖：** 先实现可用的 `PayCompensateProducer`（你仓库里目前是空方法）。
+
+#### 5.4.1 `PayCompensateProducer` 完整实现
+
+```java
+package com.sky.takeout.pay.mq;
+
+import org.apache.rocketmq.spring.core.RocketMQTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.stereotype.Component;
+
+import com.sky.takeout.pay.config.TakeoutMqProperties;
+import com.sky.takeout.pojo.dto.mq.PayCompensateMessage;
+import com.sky.takeout.pojo.enums.PayOutboxEventType;
+
+import tools.jackson.databind.ObjectMapper;
+
+/**
+ * 支付补偿命令生产者：CLOSE_CHANNEL / REFUND。
+ * 只负责序列化 + 发送；不写业务库、不调渠道 HTTP。
+ */
+@Component
+public class PayCompensateProducer {
+
+    private static final Logger log = LoggerFactory.getLogger(PayCompensateProducer.class);
+
+    private final RocketMQTemplate rocketMQTemplate;
+    private final TakeoutMqProperties mqProperties;
+    private final ObjectMapper objectMapper;
+
+    public PayCompensateProducer(RocketMQTemplate rocketMQTemplate,
+            TakeoutMqProperties mqProperties, ObjectMapper objectMapper) {
+        this.rocketMQTemplate = rocketMQTemplate;
+        this.mqProperties = mqProperties;
+        this.objectMapper = objectMapper;
+    }
+
+    public void sendClose(PayCompensateMessage msg) {
+        send(mqProperties.getCompensateCloseTag(), msg);
+    }
+
+    public void sendRefund(PayCompensateMessage msg) {
+        send(mqProperties.getCompensateRefundTag(), msg);
+    }
+
+    private void send(String tag, PayCompensateMessage msg) {
+        try {
+            // 与 Tag 对齐，避免消费者按 action 分支时对不上
+            if (msg.getAction() == null) {
+                if (mqProperties.getCompensateCloseTag().equals(tag)) {
+                    msg.setAction(PayOutboxEventType.CLOSE_CHANNEL);
+                } else {
+                    msg.setAction(PayOutboxEventType.REFUND);
+                }
+            }
+            String json = objectMapper.writeValueAsString(msg);
+            String destination = mqProperties.getCompensateTopic() + ":" + tag;
+            rocketMQTemplate.syncSend(
+                    destination,
+                    MessageBuilder.withPayload(json)
+                            .setHeader("KEYS", msg.getOutTradeNo())
+                            .setHeader("commandId", msg.getCommandId())
+                            .build());
+            log.info("补偿消息已发送 tag={} commandId={} outTradeNo={}",
+                    tag, msg.getCommandId(), msg.getOutTradeNo());
+        } catch (Exception e) {
+            throw new IllegalStateException("send compensate failed tag=" + tag, e);
+        }
+    }
+}
 ```
 
-发补偿消息失败时：打 error/warn，**不要回滚已提交入账**；可靠做法是后续把补偿也纳入 Outbox，或依赖人工/巡检（第一期至少日志可搜；进阶再 Outbox 化补偿命令）。
+> pay 模块需能注入 `ObjectMapper`（已有 `spring-boot-starter-json` 或运行在 admin 传递依赖下）。
+
+#### 5.4.2 `PayNotifyTxService`：注入 Producer，改 afterCommit
+
+构造器增加 `PayCompensateProducer`（可去掉对 `MockWechatHttpClient` 的依赖——关单/退款 HTTP 不再在这里调）：
+
+```java
+private final PayCompensateProducer payCompensateProducer;
+
+public PayNotifyTxService(OrderPayPort orderPayPort, PayOutboxPort payOutboxPort,
+        RedisIdempotentHelper redisIdempotentHelper, PayAttemptPort payAttemptPort,
+        PayCompensateProducer payCompensateProducer) {
+    this.orderPayPort = orderPayPort;
+    this.payOutboxPort = payOutboxPort;
+    this.redisIdempotentHelper = redisIdempotentHelper;
+    this.payAttemptPort = payAttemptPort;
+    this.payCompensateProducer = payCompensateProducer;
+}
+```
+
+**替换原来的 `afterCommit` 方法体：**
+
+```java
+@Override
+public void afterCommit() {
+    String action = afterCommitAction.get();
+    Long orderId = orderIdHolder.get();
+    String outTradeNo = outTradeNoHolder.get();
+
+    if (action == null || orderId == null || outTradeNo == null) {
+        return;
+    }
+
+    if ("CLOSE_OTHERS".equals(action)) {
+        // 1) P0：发 ORDER_PAID（失败不回滚入账，靠 Outbox NEW + 扫描补发）
+        try {
+            payOutboxPort.publishPendingForOrder(orderId);
+        } catch (Exception e) {
+            log.warn("Outbox 投递失败，留待扫描 orderId={}", orderId, e);
+        }
+        // 2) P1：关其它渠道 → 只发补偿消息，不再同步 HTTP / 本地标 CLOSED
+        try {
+            enqueueCloseOthers(orderId, outTradeNo);
+        } catch (Exception e) {
+            log.warn("投递 CLOSE_CHANNEL 失败，留待补偿 orderId={}", orderId, e);
+        }
+    } else if ("REFUND".equals(action)) {
+        // 短事务内已把 attempt 标成 REFUNDING；这里只发 REFUND 命令
+        // 渠道 refund + 本地 REFUNDED 由 PayCompensateConsumer 完成
+        try {
+            enqueueRefund(orderId, outTradeNo, payAttemptId);
+        } catch (Exception e) {
+            log.warn("投递 REFUND 失败，留待补偿 outTradeNo={}", outTradeNo, e);
+        }
+    }
+}
+```
+
+**删除（或废弃）同步 HTTP 的 `closeOtherUnpaidAttempts`，改为只组消息：**
+
+```java
+/**
+ * 把需要关闭的其它 attempt 编成多条 CLOSE_CHANNEL。
+ * 仍在 afterCommit 中查库列表可以；不要在这里调假微信。
+ *
+ * @param winnerOutTradeNo 本次胜出的渠道商户单号（必须是 outTradeNo，不是业务 orderNumber）
+ */
+private void enqueueCloseOthers(Long orderId, String winnerOutTradeNo) {
+    List<PayAttempt> attempts = payAttemptPort.listByOrderId(orderId);
+    for (PayAttempt attempt : attempts) {
+        if (winnerOutTradeNo.equals(attempt.getOutTradeNo())) {
+            continue; // 赢家自己不关
+        }
+        if (attempt.getStatus() == PayAttemptStatus.SUCCESS
+                || attempt.getStatus() == PayAttemptStatus.REFUNDED
+                || attempt.getStatus() == PayAttemptStatus.REFUNDING) {
+            continue; // 终态 / 退款中不关
+        }
+
+        PayCompensateMessage msg = PayCompensateMessage.builder()
+                .commandId(UUID.randomUUID().toString())
+                .action(PayOutboxEventType.CLOSE_CHANNEL)
+                .orderId(orderId)
+                .outTradeNo(attempt.getOutTradeNo())
+                .payAttemptId(attempt.getId())
+                .statusFrom(attempt.getStatus() == null ? null : attempt.getStatus().getCode())
+                .reason("close_others")
+                .occurredAt(LocalDateTime.now().toString())
+                .build();
+        payCompensateProducer.sendClose(msg);
+    }
+}
+
+/**
+ * 重复支付：短事务已 REFUNDING，提交后发退款命令。
+ */
+private void enqueueRefund(Long orderId, String outTradeNo, Long payAttemptId) {
+    PayCompensateMessage msg = PayCompensateMessage.builder()
+            .commandId(UUID.randomUUID().toString())
+            .action(PayOutboxEventType.REFUND)
+            .orderId(orderId)
+            .outTradeNo(outTradeNo)
+            .payAttemptId(payAttemptId)
+            .statusFrom(PayAttemptStatus.REFUNDING.getCode())
+            .reason("duplicate_pay")
+            .occurredAt(LocalDateTime.now().toString())
+            .build();
+    payCompensateProducer.sendRefund(msg);
+}
+```
+
+需要的 import：
+
+```java
+import java.time.LocalDateTime;
+import java.util.UUID;
+
+import com.sky.takeout.pay.mq.PayCompensateProducer;
+import com.sky.takeout.pojo.dto.mq.PayCompensateMessage;
+import com.sky.takeout.pojo.enums.PayOutboxEventType;
+```
+
+#### 5.4.3 设置 `outTradeNoHolder` 时注意
+
+`CLOSE_OTHERS` 分支里必须放**渠道商户单号** `payAttempt.getOutTradeNo()`，不要放 `getOrderNumber()`（业务单号）。否则 `enqueueCloseOthers` 用赢家单号过滤会错：
+
+```java
+afterCommitAction.set("CLOSE_OTHERS");
+orderIdHolder.set(order.getId());
+outTradeNoHolder.set(payAttempt.getOutTradeNo()); // ✅
+```
+
+`REFUND` 分支继续用 `dto.getOrderNumber()` 可以——你们回调里该字段语义就是 `out_trade_no`。
+
+#### 5.4.4 改完后 afterCommit 还做什么 / 不做什么
+
+| 做 | 不做 |
+|----|------|
+| `publishPendingForOrder` | `mockWechatHttpClient.close/refund` |
+| `enqueueCloseOthers` / `enqueueRefund` | `updateStatus(... REFUNDED/CLOSED)`（交给消费者） |
+| 发消息失败只打日志 | 回滚已提交的入账 |
+
+发补偿失败的可靠增强（进阶）：补偿命令也进 Outbox；本期至少保证日志可搜 + 人工补发。
+
+#### 5.4.5 和消费者的分工（便于联调）
+
+```text
+afterCommit          → 只 sendClose / sendRefund
+PayCompensateConsumer → close/refund HTTP + CAS 改本地状态 + 幂等
+```
+
+没有消费者时，消息会在 Broker 堆积，渠道单不会关——属预期；先把 Producer + afterCommit 改完，再接 §5.5 Consumer。
+
+---
 
 ### 5.5 CompensateConsumer
 

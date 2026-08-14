@@ -20,12 +20,6 @@ public interface PayOutboxPort {
     void publishPendingForOrder(Long orderId);
 
     /**
-     * 发布订单退款消息
-     * @param orderId
-     */
-    void publishRefundForOrder(Long orderId);
-
-    /**
      * 发布批量新消息
      * @param limit
      * @return

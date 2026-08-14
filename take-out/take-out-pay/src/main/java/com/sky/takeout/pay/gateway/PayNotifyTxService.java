@@ -1,9 +1,12 @@
 package com.sky.takeout.pay.gateway;
 
-import com.sky.takeout.pay.client.MockWechatHttpClient;
+import com.sky.takeout.pay.mq.PayCompensateProducer;
+
 import org.slf4j.LoggerFactory;
 
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -14,11 +17,13 @@ import com.sky.takeout.pay.port.OrderPayPort;
 import com.sky.takeout.pay.port.PayAttemptPort;
 import com.sky.takeout.pay.port.PayOutboxPort;
 import com.sky.takeout.pay.redis.RedisIdempotentHelper;
+import com.sky.takeout.pojo.dto.mq.PayCompensateMessage;
 import com.sky.takeout.pojo.dto.order.MockPayNotifyDTO;
 import com.sky.takeout.pojo.entity.Order;
 import com.sky.takeout.pojo.entity.PayAttempt;
 import com.sky.takeout.pojo.enums.OrderStatus;
 import com.sky.takeout.pojo.enums.PayAttemptStatus;
+import com.sky.takeout.pojo.enums.PayOutboxEventType;
 import com.sky.takeout.pojo.enums.PayStatus;
 
 import org.springframework.transaction.annotation.Transactional;
@@ -38,23 +43,22 @@ import com.sky.takeout.common.result.ErrorCode;
 @Component
 public class PayNotifyTxService {
 
-    private final MockWechatHttpClient mockWechatHttpClient;
-
     private static final Logger log = LoggerFactory.getLogger(PayNotifyTxService.class);
 
     private final OrderPayPort orderPayPort;
     private final PayAttemptPort payAttemptPort;
     private final PayOutboxPort payOutboxPort;
     private final RedisIdempotentHelper redisIdempotentHelper;
+    private final PayCompensateProducer payCompensateProducer;
 
     public PayNotifyTxService(OrderPayPort orderPayPort, PayOutboxPort payOutboxPort,
-            RedisIdempotentHelper redisIdempotentHelper, MockWechatHttpClient mockWechatHttpClient,
-            PayAttemptPort payAttemptPort) {
+            RedisIdempotentHelper redisIdempotentHelper, PayAttemptPort payAttemptPort,
+            PayCompensateProducer payCompensateProducer) {
         this.orderPayPort = orderPayPort;
         this.payOutboxPort = payOutboxPort;
         this.redisIdempotentHelper = redisIdempotentHelper;
-        this.mockWechatHttpClient = mockWechatHttpClient;
         this.payAttemptPort = payAttemptPort;
+        this.payCompensateProducer = payCompensateProducer;
     }
 
     /**
@@ -97,23 +101,25 @@ public class PayNotifyTxService {
                     }
                     /* 关闭其他未支付的支付尝试 */
                     if ("CLOSE_OTHERS".equals(action)) {
-                        closeOtherUnpaidAttempts(orderId, outTradeNo);
+                        /** 发ORDER_PAID消息 */
                         try {
                             payOutboxPort.publishPendingForOrder(orderId);
                         } catch (Exception e) {
                             log.warn("Outbox 投递失败，留待补偿 orderId={}", orderId, e);
                         }
+
+                        /** 发CLOSE_CHANNEL消息 */
+                        try {
+                            closeOtherUnpaidAttempts(orderId, outTradeNo);
+                        } catch (Exception e) {
+                            log.warn("发CLOSE_CHANNEL消息失败，留待补偿 orderId={}", orderId, e);
+                        }
                     } else if ("REFUND".equals(action)) {
                         /* 退款 */
                         try {
-                            payOutboxPort.publishRefundForOrder(orderId);
-                            mockWechatHttpClient.refund(outTradeNo, "duplicate_pay");
-
-                            // 退款成功后再把本地标REFUND
-                            payAttemptPort.updateStatus(payAttemptId, PayAttemptStatus.REFUNDING,
-                                    PayAttemptStatus.REFUNDED, null);
+                            refundAttempt(orderId, outTradeNo, payAttemptId);
                         } catch (Exception e) {
-                            log.warn("退款失败，留待补偿 outTradeNo={}", outTradeNo, e);
+                            log.warn("发送REFOUND消息失败，留待补偿 outTradeNo={}", outTradeNo, e);
                         }
                     }
                 }
@@ -190,6 +196,7 @@ public class PayNotifyTxService {
 
                     afterCommitAction.set("REFUND");
                     orderIdHolder.set(order.getId());
+                    // 用别的已经支付的赢家的商户订单号
                     outTradeNoHolder.set(dto.getOrderNumber());
 
                     return latest;
@@ -206,7 +213,8 @@ public class PayNotifyTxService {
             /** 本支付单成功支付，则关闭其他未支付的支付单 */
             afterCommitAction.set("CLOSE_OTHERS");
             orderIdHolder.set(order.getId());
-            outTradeNoHolder.set(payAttempt.getOrderNumber());
+            // 赢家商户订单号
+            outTradeNoHolder.set(payAttempt.getOutTradeNo());
             log.info("CAS 入账成功 orderId={}", order.getId());
             // 返回订单
             return orderPayPort.findOrderById(order.getId());
@@ -219,7 +227,7 @@ public class PayNotifyTxService {
     }
 
     /**
-     * 关闭其他未支付的支付尝试
+     * 关闭其他未支付的支付单，发CLOSE_CHANNEL消息
      * @param orderId
      * @param winnerOutTradeNo
      */
@@ -234,18 +242,41 @@ public class PayNotifyTxService {
                     || attempt.getStatus() == PayAttemptStatus.REFUNDING) {
                 continue;
             }
-            try {
-                mockWechatHttpClient.close(attempt.getOutTradeNo());
-            } catch (Exception e) {
-                log.warn("关闭其他未支付的支付尝试失败，留待补偿 outTradeNo={}", attempt.getOutTradeNo(), e);
-            }
+            
+            PayCompensateMessage msg = new PayCompensateMessage().builder()
+                .commandId(UUID.randomUUID().toString())
+                .action(PayOutboxEventType.CLOSE_CHANNEL)
+                .orderId(orderId)
+                .outTradeNo(attempt.getOutTradeNo())
+                .payAttemptId(attempt.getId())
+                .statusFrom(attempt.getStatus() == null ? null : attempt.getStatus().getCode())
+                .reason("close other channel")
+                .occurredAt(LocalDateTime.now().toString())
+                .build();
 
-            try {
-                payAttemptPort.updateStatus(attempt.getId(), attempt.getStatus(), PayAttemptStatus.CLOSED, null);
-            } catch (Exception e) {
-                log.warn("本地标 CLOSED 失败 attemptId={}", attempt.getId(), e);
-            }
+            payCompensateProducer.sendClose(msg);
         }
+    }
+
+    /**
+     * 发送退款消息，发REFOUND消息
+     * @param orderId
+     * @param outTradeNo
+     * @param payAttemptId
+     */
+    private void refundAttempt(Long orderId, String outTradeNo, Long payAttemptId) {
+        PayCompensateMessage msg = new PayCompensateMessage().builder()
+                .commandId(UUID.randomUUID().toString())
+                .action(PayOutboxEventType.REFUND)
+                .orderId(orderId)
+                .outTradeNo(outTradeNo)
+                .payAttemptId(payAttemptId)
+                .statusFrom(PayAttemptStatus.REFUNDING.getCode())
+                .reason("refund this attempt")
+                .occurredAt(LocalDateTime.now().toString())
+                .build();
+
+        payCompensateProducer.sendRefund(msg);
     }
 
     /**

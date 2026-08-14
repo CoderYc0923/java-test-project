@@ -13,7 +13,10 @@ import lombok.Getter;
 @Getter
 public enum PayOutboxEventType {
 
-    ORDER_PAID("ORDER_PAID", "订单支付");
+    ORDER_PAID("ORDER_PAID", "订单支付"),
+    CLOSE_CHANNEL("CLOSE_CHANNEL", "关闭渠道"),
+    REFUND("REFUND", "退款");
+
 
     @EnumValue
     @JsonValue

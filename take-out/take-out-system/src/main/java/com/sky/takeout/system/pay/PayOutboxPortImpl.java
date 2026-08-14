@@ -106,24 +106,6 @@ public class PayOutboxPortImpl implements PayOutboxPort {
         }
     }
 
-
-    /**
-     * 发布订单退款消息
-     * @param orderId 订单ID
-     */
-    @Override
-    public void publishRefundForOrder(Long orderId) {
-
-        if (orderId == null) {
-            throw new IllegalArgumentException("orderId cannot be null");
-        }
-
-        
-
-
-
-    }
-
     /**
      * 供定时扫描调用，批量发布待处理的支付消息
      * @param limit 限制数量
