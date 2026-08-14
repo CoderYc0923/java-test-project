@@ -79,6 +79,23 @@ public class RedisIdempotentHelper {
         return redis.opsForValue().get(key);
     }
 
+    /**
+     * 计数 +1，并在首次创建时设置 TTL（教学失败次数、限流窗口等）。
+     * <p>
+     * 对应 Redis：{@code INCR key}；若结果为 1 再 {@code EXPIRE key ttlSeconds}。
+     * 多实例并发时各自 INCR 仍原子；TTL 仅第一次设置，避免每次 INCR 都刷新过期时间。
+     *
+     * @return 自增后的值；异常时不应吞掉（由调用方决定）
+     */
+    public long incr(String key, long ttlSeconds) {
+        Long n = redis.opsForValue().increment(key);
+        long value = n == null ? 0L : n;
+        if (value == 1L && ttlSeconds > 0) {
+            redis.expire(key, Duration.ofSeconds(ttlSeconds));
+        }
+        return value;
+    }
+
     public void delete(String key) {
         redis.delete(key);
     }

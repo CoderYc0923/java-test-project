@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 004-create-mq-fail
+      author: cyrus
+      comment: 创建 mq_fail 表
+      changes:
+        - sqlFile:
+            path: db/changelog/changes/004-create-mq-fail.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: false
+      rollback:
+        - sql: DROP TABLE IF EXISTS mq_fail;

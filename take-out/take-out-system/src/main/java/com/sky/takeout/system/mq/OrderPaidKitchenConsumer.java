@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import com.sky.takeout.pay.config.TakeoutMqProperties;
 import com.sky.takeout.pay.redis.RedisIdempotentHelper;
 import com.sky.takeout.pojo.dto.mq.OrderPaidMessage;
 import com.sky.takeout.system.notify.KitchenNotifyService;
@@ -19,12 +20,16 @@ import tools.jackson.databind.ObjectMapper;
  * 支付成功消息 → 厨房 WebSocket 来单提醒。
  * <p>
  * 幂等顺序贴生产：先推送，成功后再标记；推送失败不写键，便于 MQ 重试。
+ * 消费者抛出异常，mq会进入重试.
+ * 若超过maxReconsumeTimes，则消息进入%DLQ%take-kitchen-consumer，由OrderPaidDlqArchiver处理。
  */
 @Component
 @RocketMQMessageListener(
         topic = "${mq.order-paid-topic:takeout-order-paid}",
         consumerGroup = "${mq.order-paid-consumer-group:take-kitchen-consumer}",
-        selectorExpression = "${mq.order-paid-tag:ORDER_PAID}")
+        selectorExpression = "${mq.order-paid-tag:ORDER_PAID}",
+        maxReconsumeTimes = 3 // 重试3次
+)
 public class OrderPaidKitchenConsumer implements RocketMQListener<String> {
 
     private static final Logger log = LoggerFactory.getLogger(OrderPaidKitchenConsumer.class);
@@ -48,7 +53,7 @@ public class OrderPaidKitchenConsumer implements RocketMQListener<String> {
         try {
             msg = objectMapper.readValue(body, OrderPaidMessage.class);
         } catch (Exception e) {
-            // 毒消息：解析失败不应无限重试
+            // 毒消息：解析失败不应无限重试 → return（ack）
             log.error("解析支付消息失败，body={}", body, e);
             return;
         }
@@ -64,8 +69,14 @@ public class OrderPaidKitchenConsumer implements RocketMQListener<String> {
             return;
         }
 
-        // 厨房处理：推管理端（失败抛错 → 不写幂等 → MQ 重试）
-        kitchenNotifyService.notifyNewOrder(msg);
+        try {
+            // 厨房通知
+            kitchenNotifyService.notifyNewOrder(msg);
+        } catch (RuntimeException e) {
+            log.error("厨房通知失败，将重试 eventId={}, orderId={}", msg.getEventId(), msg.getOrderId());
+            throw e; // 抛错 → MQ 重试
+        }
+
 
         boolean first = redis.trySetNx(idemKey, "SUCCESS", Duration.ofDays(7).getSeconds());
         if (!first) {

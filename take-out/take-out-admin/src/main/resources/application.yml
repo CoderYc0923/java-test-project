@@ -69,3 +69,9 @@ mq:
   order-paid-tag: ORDER_PAID
   order-paid-consumer-group: take-kitchen-consumer
   outbox-scan-delay-ms: 15000
+
+  kitchen-fail-times: 0
+  compensate-topic: takeout-pay-compensate
+  compensate-close-tag: CLOSE_CHANNEL
+  compensate-refund-tag: REFUND
+  compensate-consumer-group: take-pay-compensate-consumer

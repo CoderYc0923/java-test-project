@@ -110,6 +110,9 @@ afterCommit：payOutboxPort.publishPendingForOrder(orderId)
 
 ### P1 — 强烈建议（和现有 afterCommit 副作用对齐）
 
+> **生产向说明（失败可恢复 / 补偿消息化 close·refund，含为什么与落地）：**  
+> [`2026-08-14-rocketmq-p1-retry-compensate-handson.md`](./2026-08-14-rocketmq-p1-retry-compensate-handson.md)
+
 #### F4. 失败重试 + 死信 / 可观测
 
 **业务：** `close` / `refund` / 推厨房失败不能丢。  
@@ -416,4 +419,5 @@ Producer 发「半消息」到 Broker（此时消费者看不到）
 4. 再考虑 F5 补偿消息化  
 
 需要开工时从 **Milestone 1** 或直接 **Milestone 2** 说一声即可。  
-P0 逐步手抄请跟：[`2026-08-13-rocketmq-p0-outbox-handson.md`](./2026-08-13-rocketmq-p0-outbox-handson.md)。
+P0 逐步手抄请跟：[`2026-08-13-rocketmq-p0-outbox-handson.md`](./2026-08-13-rocketmq-p0-outbox-handson.md)。  
+P1（重试/死信 + 补偿消息）请跟：[`2026-08-14-rocketmq-p1-retry-compensate-handson.md`](./2026-08-14-rocketmq-p1-retry-compensate-handson.md)。

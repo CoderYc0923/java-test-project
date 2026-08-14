@@ -106,6 +106,7 @@ public class PayNotifyTxService {
                     } else if ("REFUND".equals(action)) {
                         /* 退款 */
                         try {
+                            payOutboxPort.publishRefundForOrder(orderId);
                             mockWechatHttpClient.refund(outTradeNo, "duplicate_pay");
 
                             // 退款成功后再把本地标REFUND

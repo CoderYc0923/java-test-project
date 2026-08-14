@@ -768,7 +768,8 @@ system/mq/OrderPaidKitchenConsumer.java
 | `2026-08-13-rocketmq-pay-feature-lesson.md` | 全部功能点 P0～P2、Outbox vs 事务消息 |
 | **本文** | **只把 P0 落到可手抄的完整代码** |
 
-P1（死信、补偿消息化）等 P0 验收过后再开新教程。
+P1（死信、补偿消息化）手抄教程：  
+[`2026-08-14-rocketmq-p1-retry-compensate-handson.md`](./2026-08-14-rocketmq-p1-retry-compensate-handson.md)
 
 ---
 

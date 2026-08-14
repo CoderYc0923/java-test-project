@@ -19,4 +19,19 @@ public class TakeoutMqProperties {
 
     /** 出箱扫描延迟时间 */
     private Long outboxScanDelayMs = 15000L;
+
+    /** 厨房失败次数 */
+    private Integer kitchenFailTimes = 0;
+
+    /** 补偿主题 */
+    private String compensateTopic = "takeout-pay-compensate";
+
+    /** 补偿关闭标签 */
+    private String compensateCloseTag = "CLOSE_CHANNEL";
+
+    /** 补偿退款标签 */
+    private String compensateRefundTag = "REFUND";
+
+    /** 补偿消费者组 */
+    private String compensateConsumerGroup = "take-pay-compensate-consumer";
 }

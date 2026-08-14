@@ -5,3 +5,5 @@ databaseChangeLog:
       file: db/changelog/changes/002-create-pay-attempt.yaml
   - include:
       file: db/changelog/changes/003-create-pay-outbox.yaml
+  - include:
+      file: db/changelog/changes/004-create-mq-fail.yaml
